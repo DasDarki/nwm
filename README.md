@@ -4,7 +4,24 @@ A cross-platform CLI (Windows and Linux) that takes the busywork out of running 
 
 ## Install
 
-Download the binary for your platform from the [latest release](https://github.com/DasDarki/nwm/releases/latest) and put it on your `PATH`. Afterwards nwm keeps itself up to date:
+**Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/DasDarki/nwm/main/install.sh | sh
+```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/DasDarki/nwm/main/install.ps1 | iex
+```
+
+The installers verify the download against `checksums.txt`, need no admin rights and add nwm to your `PATH`
+(Linux: `~/.local/bin`, registered in `.profile`, `.bashrc`, `.zshrc` and fish; Windows: `%LOCALAPPDATA%\Programs\nwm`, registered in the user `PATH`).
+Set `NWM_VERSION` to install a specific release and `NWM_INSTALL_DIR` to change the location.
+
+Alternatively download the binary from the [latest release](https://github.com/DasDarki/nwm/releases/latest).
+Afterwards nwm keeps itself up to date:
 
 ```sh
 nwm self-update
