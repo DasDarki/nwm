@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -15,6 +16,8 @@ const (
 	SourceRegistry SourceKind = iota
 	SourceGit
 	SourceLocal
+	SourceURL
+	SourceGist
 )
 
 type Source struct {
@@ -25,6 +28,12 @@ type Source struct {
 	Subdir  string
 	Version string
 	Path    string
+	File    string
+	Gist    string
+}
+
+func (s Source) SingleFile() bool {
+	return s.Kind == SourceURL || s.Kind == SourceGist
 }
 
 func ParseSource(spec string) (Source, error) {
@@ -37,6 +46,13 @@ func ParseSource(spec string) (Source, error) {
 		return localSource(source, strings.TrimPrefix(spec, "file:"))
 	case looksLikePath(spec):
 		return localSource(source, spec)
+	case strings.HasPrefix(spec, "gist:"):
+		return gistSource(source, strings.TrimPrefix(spec, "gist:"))
+	case (strings.HasPrefix(spec, "https://") || strings.HasPrefix(spec, "http://")) && IsRecipeFileName(urlFileName(spec)):
+		source.Kind = SourceURL
+		source.URL = spec
+		source.File = urlFileName(spec)
+		return source, nil
 	case strings.HasPrefix(spec, "github:"):
 		rest, version := splitVersion(strings.TrimPrefix(spec, "github:"))
 		parts := strings.Split(strings.Trim(rest, "/"), "/")
@@ -78,20 +94,63 @@ func localSource(source Source, path string) (Source, error) {
 		return source, err
 	}
 	info, err := os.Stat(absolute)
-	if err != nil || !info.IsDir() {
-		return source, fmt.Errorf("recipe directory %s not found", absolute)
+	if err != nil {
+		return source, fmt.Errorf("recipe %s not found", absolute)
 	}
 	source.Kind = SourceLocal
 	source.Path = absolute
+	if !info.IsDir() {
+		source.Path = filepath.Dir(absolute)
+		source.File = filepath.Base(absolute)
+	}
 	return source, nil
+}
+
+func gistSource(source Source, spec string) (Source, error) {
+	rest, revision := splitVersion(spec)
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	switch {
+	case len(parts) == 1:
+		source.Gist = parts[0]
+	case len(parts) == 2 && isGistID(parts[0]):
+		source.Gist, source.File = parts[0], parts[1]
+	case len(parts) == 2:
+		source.Gist = parts[1]
+	case len(parts) == 3:
+		source.Gist, source.File = parts[1], parts[2]
+	}
+	if !isGistID(source.Gist) {
+		return source, fmt.Errorf("expected gist:[user/]id[/file][@revision], got %q", "gist:"+spec)
+	}
+	source.Kind = SourceGist
+	source.Version = revision
+	return source, nil
+}
+
+func isGistID(text string) bool {
+	if len(text) < 20 {
+		return false
+	}
+	for _, character := range strings.ToLower(text) {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
+}
+
+func urlFileName(url string) string {
+	trimmed, _, _ := strings.Cut(url, "?")
+	trimmed, _, _ = strings.Cut(trimmed, "#")
+	return path.Base(strings.TrimSuffix(trimmed, "/"))
 }
 
 func looksLikePath(spec string) bool {
 	if strings.HasPrefix(spec, ".") || strings.HasPrefix(spec, "/") || strings.HasPrefix(spec, "~") || filepath.IsAbs(spec) || filepath.VolumeName(spec) != "" {
 		return true
 	}
-	info, err := os.Stat(spec)
-	return err == nil && info.IsDir()
+	_, err := os.Stat(spec)
+	return err == nil
 }
 
 func splitSubdir(url string) (string, string) {

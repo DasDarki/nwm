@@ -15,14 +15,16 @@ import (
 )
 
 func addRecipeDirFlag(command *cobra.Command, target *string) {
-	command.Flags().StringVarP(target, "dir", "C", ".", "recipe directory")
-	command.MarkFlagDirname("dir")
+	command.Flags().StringVarP(target, "dir", "C", ".", "recipe directory or file, e.g. staging.Recipefile")
 }
 
-func openRecipeDocument(directory string) (*recipe.Document, error) {
-	absolute, err := filepath.Abs(directory)
+func openRecipeDocument(location string) (*recipe.Document, error) {
+	absolute, err := filepath.Abs(location)
 	if err != nil {
 		return nil, err
+	}
+	if info, err := os.Stat(absolute); err == nil && !info.IsDir() {
+		return recipe.OpenDocumentFile(absolute)
 	}
 	return recipe.OpenDocument(absolute)
 }
@@ -40,10 +42,11 @@ func joinStatement(arguments []string) string {
 }
 
 func shellCompleter(command *cobra.Command, editor bool) *recipe.Completer {
-	directory, _ := command.Flags().GetString("dir")
-	completer := &recipe.Completer{Dir: directory, Editor: editor}
-	if document, err := openRecipeDocument(directory); err == nil {
+	location, _ := command.Flags().GetString("dir")
+	completer := &recipe.Completer{Dir: location, Editor: editor}
+	if document, err := openRecipeDocument(location); err == nil {
 		completer.Manifest = document.Manifest
+		completer.Dir = document.Dir
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -73,7 +76,7 @@ func newRecipeEditCommand() *cobra.Command {
 	var useTOML bool
 	var name string
 	command := &cobra.Command{
-		Use:   "edit [directory]",
+		Use:   "edit [directory | file]",
 		Short: "Edit a recipe interactively with completion",
 		Long: "Opens a full screen editor. Every recipe statement is a command, e.g.\n" +
 			"  package sandbox enable\n  use postgres\n  config discover.port 7790\n" +
@@ -90,6 +93,19 @@ func newRecipeEditCommand() *cobra.Command {
 			directory, err := filepath.Abs(directory)
 			if err != nil {
 				return err
+			}
+			if info, statErr := os.Stat(directory); statErr == nil && !info.IsDir() {
+				document, err := recipe.OpenDocumentFile(directory)
+				if err != nil {
+					return err
+				}
+				return runEditor(document, false)
+			}
+			if recipe.IsRecipeFileName(filepath.Base(directory)) {
+				if name == "" {
+					name = strings.ToLower(filepath.Base(filepath.Dir(directory)))
+				}
+				return runEditor(recipe.NewDocumentFile(directory, name), true)
 			}
 			_, found, err := recipe.Detect(directory)
 			if err != nil {
@@ -184,7 +200,7 @@ func newRecipeRemoveCommand() *cobra.Command {
 func newRecipeShowCommand() *cobra.Command {
 	var formatName string
 	command := &cobra.Command{
-		Use:   "show [directory]",
+		Use:   "show [directory | file]",
 		Short: "Print a recipe as Recipefile or TOML",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, arguments []string) error {
@@ -217,7 +233,7 @@ func newRecipeShowCommand() *cobra.Command {
 func newRecipeConvertCommand() *cobra.Command {
 	var formatName string
 	command := &cobra.Command{
-		Use:   "convert [directory] --to <dsl|toml>",
+		Use:   "convert [directory | file] --to <dsl|toml>",
 		Short: "Convert between Recipefile and recipe.toml",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, arguments []string) error {
@@ -250,8 +266,13 @@ func newRecipeConvertCommand() *cobra.Command {
 	return command
 }
 
-func writeNewRecipe(directory string, name string, format recipe.Format) (string, error) {
-	if _, found, err := recipe.Detect(directory); err != nil || found {
+func writeNewRecipe(directory string, fileName string, name string, format recipe.Format) (string, error) {
+	if fileName != "" {
+		format = recipe.FormatForFile(fileName)
+		if _, err := os.Stat(filepath.Join(directory, fileName)); err == nil {
+			return "", fmt.Errorf("%s already exists", filepath.Join(directory, fileName))
+		}
+	} else if _, found, err := recipe.Detect(directory); err != nil || found {
 		if err == nil {
 			err = fmt.Errorf("%s already contains a recipe", directory)
 		}
@@ -261,7 +282,7 @@ func writeNewRecipe(directory string, name string, format recipe.Format) (string
 	if err != nil {
 		return "", err
 	}
-	document := &recipe.Document{Dir: directory, Format: format, Manifest: manifest}
+	document := &recipe.Document{Dir: directory, FileName: fileName, Format: format, Manifest: manifest}
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return "", err
 	}

@@ -210,6 +210,28 @@ func (m *Manifest) Validate(directory string) error {
 	return nil
 }
 
+func (m *Manifest) LocalReferences() []string {
+	var references []string
+	for _, group := range [][]Resource{m.Packages, m.Assets} {
+		for _, resource := range group {
+			if resource.Path != "" {
+				references = append(references, resource.Path)
+			}
+		}
+	}
+	for _, module := range m.Modules {
+		for _, source := range []string{module.Linux, module.Windows} {
+			if source != "" && !isURL(source) {
+				references = append(references, source)
+			}
+		}
+	}
+	for _, file := range m.Files {
+		references = append(references, file.Source)
+	}
+	return references
+}
+
 func checkSource(directory string, source string, add func(string, ...any)) {
 	path, err := fsutil.SafeJoin(directory, source)
 	if err != nil {

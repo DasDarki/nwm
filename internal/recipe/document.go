@@ -38,12 +38,73 @@ func (f Format) FileName() string {
 
 type Document struct {
 	Dir      string
+	FileName string
 	Format   Format
 	Manifest *Manifest
 }
 
 func (d *Document) Path() string {
+	if d.FileName != "" {
+		return filepath.Join(d.Dir, d.FileName)
+	}
 	return filepath.Join(d.Dir, d.Format.FileName())
+}
+
+func IsRecipeFileName(name string) bool {
+	lowered := strings.ToLower(name)
+	return lowered == strings.ToLower(DSLFileName) || strings.HasSuffix(lowered, ".recipefile") || strings.HasSuffix(lowered, ".recipe") || strings.HasSuffix(lowered, ".toml")
+}
+
+func FormatForFile(name string) Format {
+	if strings.HasSuffix(strings.ToLower(name), ".toml") {
+		return FormatTOML
+	}
+	return FormatDSL
+}
+
+func OpenDocumentFile(path string) (*Document, error) {
+	document := &Document{Dir: filepath.Dir(path), FileName: filepath.Base(path), Format: FormatForFile(path)}
+	if err := document.load(); err != nil {
+		return nil, err
+	}
+	return document, nil
+}
+
+func NewDocumentFile(path string, name string) *Document {
+	document := NewDocument(filepath.Dir(path), FormatForFile(path), name)
+	document.FileName = filepath.Base(path)
+	return document
+}
+
+func (d *Document) load() error {
+	var err error
+	if d.Format == FormatDSL {
+		content, readErr := os.ReadFile(d.Path())
+		if readErr != nil {
+			return readErr
+		}
+		d.Manifest, err = ParseDSL(string(content))
+		if err != nil {
+			return fmt.Errorf("%s: %w", d.Path(), err)
+		}
+		return nil
+	}
+	d.Manifest, err = loadTOML(d.Path())
+	return err
+}
+
+func convertedFileName(name string, format Format) string {
+	if name == "" || name == DSLFileName || name == FileName {
+		return ""
+	}
+	base := name
+	for _, suffix := range []string{".toml", ".Recipefile", ".recipefile", ".recipe"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	if format == FormatTOML {
+		return base + ".toml"
+	}
+	return base + ".Recipefile"
 }
 
 func Detect(directory string) (Format, bool, error) {
@@ -70,19 +131,8 @@ func OpenDocument(directory string) (*Document, error) {
 		return nil, fmt.Errorf("no %s or %s in %s", DSLFileName, FileName, directory)
 	}
 	document := &Document{Dir: directory, Format: format}
-	switch format {
-	case FormatDSL:
-		content, err := os.ReadFile(document.Path())
-		if err != nil {
-			return nil, err
-		}
-		if document.Manifest, err = ParseDSL(string(content)); err != nil {
-			return nil, err
-		}
-	default:
-		if document.Manifest, err = loadTOML(document.Path()); err != nil {
-			return nil, err
-		}
+	if err := document.load(); err != nil {
+		return nil, err
 	}
 	return document, nil
 }
@@ -119,6 +169,7 @@ func (d *Document) Convert(format Format) error {
 		return nil
 	}
 	previous := d.Path()
+	d.FileName = convertedFileName(d.FileName, format)
 	d.Format = format
 	if err := d.Save(); err != nil {
 		return err

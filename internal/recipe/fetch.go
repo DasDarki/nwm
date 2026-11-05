@@ -46,15 +46,34 @@ func Fetch(ctx context.Context, source Source, refresh bool, report ui.Reporter)
 	case SourceLocal:
 		fetched.Dir = source.Path
 		fetched.Version = "local"
+	case SourceURL, SourceGist:
+		if err := fetchSingleFile(ctx, fetched, report); err != nil {
+			return nil, err
+		}
+		fetched.Remote = true
 	default:
 		if err := fetchGit(ctx, fetched, report); err != nil {
 			return nil, err
 		}
 		fetched.Remote = true
 	}
-	manifest, err := Load(fetched.Dir)
+	var manifest *Manifest
+	var err error
+	if fetched.Source.File != "" {
+		var document *Document
+		if document, err = OpenDocumentFile(filepath.Join(fetched.Dir, fetched.Source.File)); err == nil {
+			manifest = document.Manifest
+		}
+	} else {
+		manifest, err = Load(fetched.Dir)
+	}
 	if err != nil {
 		return nil, err
+	}
+	if fetched.Source.SingleFile() {
+		if references := manifest.LocalReferences(); len(references) > 0 {
+			return nil, fmt.Errorf("single-file recipes cannot reference local files (%s), publish them as a git repository instead", strings.Join(references, ", "))
+		}
 	}
 	if err := manifest.Validate(fetched.Dir); err != nil {
 		return nil, err

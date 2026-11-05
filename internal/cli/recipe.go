@@ -166,8 +166,8 @@ func newRecipeInitCommand() *cobra.Command {
 	var name string
 	var useTOML bool
 	command := &cobra.Command{
-		Use:   "init [directory]",
-		Short: "Create a Recipefile to start from",
+		Use:   "init [directory | file]",
+		Short: "Create a Recipefile to start from (or a named one like staging.Recipefile)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, arguments []string) error {
 			directory := "."
@@ -178,6 +178,10 @@ func newRecipeInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			fileName := ""
+			if recipe.IsRecipeFileName(filepath.Base(directory)) {
+				directory, fileName = filepath.Dir(directory), filepath.Base(directory)
+			}
 			if name == "" {
 				name = strings.ToLower(filepath.Base(directory))
 			}
@@ -185,7 +189,7 @@ func newRecipeInitCommand() *cobra.Command {
 			if useTOML {
 				format = recipe.FormatTOML
 			}
-			path, err := writeNewRecipe(directory, name, format)
+			path, err := writeNewRecipe(directory, fileName, name, format)
 			if err != nil {
 				return err
 			}
@@ -201,7 +205,7 @@ func newRecipeInitCommand() *cobra.Command {
 
 func newRecipeValidateCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "validate [directory]",
+		Use:   "validate [directory | file]",
 		Short: "Check a local recipe for mistakes",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, arguments []string) error {
@@ -341,7 +345,7 @@ func newRecipeInfoCommand() *cobra.Command {
 			for name, value := range manifest.Variables {
 				ui.Detail("variable", fmt.Sprintf("%s = %s", name, server.FormatValue(value)))
 			}
-			if fetched.Remote {
+			if fetched.Source.Kind == recipe.SourceGit || fetched.Source.Kind == recipe.SourceRegistry {
 				var tags []string
 				if err := ui.Run("Listing versions", func(ctx context.Context, _ ui.Reporter) error {
 					found, err := recipe.RemoteTags(ctx, fetched.Source.URL)

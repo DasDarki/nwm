@@ -84,6 +84,8 @@ nwm recipe add use postgres
 nwm recipe rm package sandbox
 nwm recipe show --format toml
 nwm recipe convert --to toml
+nwm recipe init staging.Recipefile
+nwm recipe add -C staging.Recipefile config discover.port 7790
 ```
 
 ### Recipefile
@@ -168,7 +170,13 @@ Secrets live per server in `~/.nwm/secrets/<server>.toml` (readable only by you)
 | Registry | `@dasdarki/roleplay`, `@dasdarki/roleplay@^1`, `roleplay@1.2.0` |
 | GitHub | `github:owner/repo`, `github:owner/repo/sub/dir@v1.2.0` |
 | Git URL | `https://host/repo.git#v1`, `git+https://host/repo.git//sub/dir#^1` |
-| Local | `./my-recipe`, `file:/path/to/recipe` |
+| Local | `./my-recipe`, `./staging.Recipefile`, `./dev.toml`, `file:/path/to/recipe` |
+| File URL | `https://example.com/rp.Recipefile`, `https://example.com/recipe.toml` |
+| Gist | `gist:you/<id>`, `gist:<id>/staging.Recipefile`, `gist:<id>@<revision>` |
+
+A folder can hold several recipes next to each other (`dev.Recipefile`, `staging.Recipefile`) that share
+`files/` and `packages/`. Recipes loaded from a URL or gist are single files: they cannot use `file`,
+`package ... path` or local modules, and `nwm recipe upgrade` re-applies them whenever their content changed.
 
 Versions are git tags. Constraints: exact (`1.2.3`), `^1`, `^1.2`, `~1.2`, `>=1.0`, a branch or tag name, or nothing for the newest release.
 The applied recipe, its variables, launch arguments and services are stored in the server's `nwm.toml`.
