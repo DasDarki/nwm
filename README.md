@@ -1,6 +1,10 @@
+<p align="center"><img src="banner.png" alt="nwm - nanos world manager" width="720"></p>
+
 # 🌍 nwm - nanos world manager
 
 A cross-platform CLI (Windows and Linux) that takes the busywork out of running [nanos world](https://nanos-world.com) servers.
+
+📖 **Documentation: [nwm.dasdarki.de](https://nwm.dasdarki.de)**
 
 ## Install
 

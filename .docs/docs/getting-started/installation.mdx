@@ -1,0 +1,150 @@
+---
+title: Installation
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Installation
+
+nwm is a single executable for Linux and Windows (x64 and ARM64). The install scripts download the latest release,
+verify it against the published SHA-256 checksums and add it to your `PATH`. No administrator rights are needed.
+
+<Tabs groupId="os" queryString>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+curl -fsSL https://nwm.dasdarki.de/install.sh | sh
+```
+
+nwm is installed to `~/.local/bin/nwm`. If that folder is not on your `PATH` yet, the script adds it to `~/.profile`,
+`~/.bashrc`, `~/.zshrc` (when you use zsh) and `~/.config/fish/conf.d/nwm.fish` (when fish is installed).
+Open a new terminal afterwards.
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+```powershell
+irm https://nwm.dasdarki.de/install.ps1 | iex
+```
+
+nwm is installed to `%LOCALAPPDATA%\Programs\nwm\nwm.exe` and that folder is added to your user `PATH`.
+The current PowerShell session picks it up immediately, other terminals after a restart.
+
+</TabItem>
+</Tabs>
+
+Check that it works:
+
+```bash
+nwm version
+```
+
+## Installer options
+
+Both installers read two environment variables:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `NWM_VERSION` | `latest` | Install a specific release, e.g. `0.2.2` or `v0.2.2` |
+| `NWM_INSTALL_DIR` | see above | Install into another folder |
+
+<Tabs groupId="os" queryString>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+curl -fsSL https://nwm.dasdarki.de/install.sh | NWM_VERSION=0.2.2 sh
+```
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+```powershell
+$env:NWM_VERSION = '0.2.2'; irm https://nwm.dasdarki.de/install.ps1 | iex
+```
+
+</TabItem>
+</Tabs>
+
+The scripts are also available from the repository, e.g.
+`https://raw.githubusercontent.com/DasDarki/nwm/main/install.sh`.
+
+## Manual installation
+
+Download the binary for your platform from the [latest release](https://github.com/DasDarki/nwm/releases/latest)
+(`nwm_linux_amd64`, `nwm_linux_arm64`, `nwm_windows_amd64.exe`, `nwm_windows_arm64.exe`), compare it with
+`checksums.txt`, rename it to `nwm` (or `nwm.exe`) and put it into a folder on your `PATH` that your user can write to.
+The last part matters for self updates.
+
+## Requirements
+
+nwm itself has no dependencies. Some features use other tools:
+
+| Feature | Needs |
+|---|---|
+| Installing servers | SteamCMD, downloaded automatically to `~/.nwm/steamcmd`. On Linux a `steamcmd` on your `PATH` is used if present |
+| Git recipes and git packages | `git` |
+| [Services](../services.md) | Docker with a running daemon |
+| Publishing recipes | A GitHub account, ideally the `gh` CLI |
+| Shell completion | bash, zsh, fish or PowerShell |
+
+:::tip Linux and SteamCMD
+SteamCMD is a 32-bit program. On a fresh Debian or Ubuntu system you may need the 32-bit C runtime:
+`sudo dpkg --add-architecture i386 && sudo apt update && sudo apt install lib32gcc-s1`.
+:::
+
+## Updating
+
+nwm updates itself from GitHub releases and verifies the download before replacing the executable:
+
+```bash
+nwm self-update
+nwm su
+```
+
+Once a day nwm checks for a new release in the background and prints a hint after a command. Disable that with
+`NWM_NO_UPDATE_CHECK=1`.
+
+## Shell completion
+
+nwm completes commands, flags, server names, secrets and even recipe statements such as store package names.
+
+<Tabs groupId="shell">
+<TabItem value="bash" label="bash" default>
+
+```bash
+echo 'source <(nwm completion bash)' >> ~/.bashrc
+```
+
+</TabItem>
+<TabItem value="zsh" label="zsh">
+
+```bash
+echo 'source <(nwm completion zsh)' >> ~/.zshrc
+```
+
+</TabItem>
+<TabItem value="fish" label="fish">
+
+```bash
+nwm completion fish > ~/.config/fish/completions/nwm.fish
+```
+
+</TabItem>
+<TabItem value="powershell" label="PowerShell">
+
+```powershell
+nwm completion powershell | Out-String | Invoke-Expression
+```
+
+Add the line to your `$PROFILE` to keep it.
+
+</TabItem>
+</Tabs>
+
+## Uninstalling
+
+Delete the executable and, if you want to remove all data, the `~/.nwm` folder (servers created in their default
+location live there as well). On Windows also remove `%LOCALAPPDATA%\Programs\nwm` from your user `PATH`.
+Docker containers created by nwm are named `nwm-<server>-<service>`; remove them with `nwm server remove <name>` before
+deleting the folder, or by hand with `docker rm -f`.

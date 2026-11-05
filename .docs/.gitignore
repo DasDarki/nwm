@@ -1,0 +1,6 @@
+node_modules/
+build/
+.docusaurus/
+.cache-loader/
+static/install.sh
+static/install.ps1
