@@ -98,7 +98,7 @@ var statements = []Statement{
 		m.Assets = putResource(m.Assets, resource)
 		return nil
 	}},
-	{Keyword: "module", Aliases: []string{"mod"}, Usage: "module <name> [linux <source>] [windows <source>]", Summary: "add a C module", Options: []string{"linux", "windows"}, apply: applyModule},
+	{Keyword: "module", Aliases: []string{"mod"}, Usage: "module <name> [linux <source>] [windows <source>] [enable]", Summary: "add a C module package from prebuilt .so/.dll files or archives", Options: []string{"linux", "windows", "enable"}, apply: applyModule},
 	{Keyword: "file", Usage: "file <source> <target> [template]", Summary: "copy a recipe file into the server", Options: []string{"template"}, apply: func(m *Manifest, args []token) error {
 		if err := requireArgs(args, 2, "file <source> <target> [template]"); err != nil {
 			return err
@@ -247,11 +247,16 @@ func putResource(resources []Resource, resource Resource) []Resource {
 }
 
 func applyModule(m *Manifest, args []token) error {
-	if err := requireArgs(args, 1, "module <name> [linux <source>] [windows <source>]"); err != nil {
+	if err := requireArgs(args, 1, "module <name> [linux <source>] [windows <source>] [enable]"); err != nil {
 		return err
 	}
 	module := Module{Name: args[0].Text}
 	for index := 1; index < len(args); index += 2 {
+		if args[index].Text == "enable" {
+			module.Enable = true
+			index--
+			continue
+		}
 		if index+1 >= len(args) {
 			return fmt.Errorf("module: %q needs a source", args[index].Text)
 		}
@@ -261,7 +266,7 @@ func applyModule(m *Manifest, args []token) error {
 		case "windows":
 			module.Windows = args[index+1].Text
 		default:
-			return fmt.Errorf("unknown option %q for module, expected linux or windows", args[index].Text)
+			return fmt.Errorf("unknown option %q for module, expected linux, windows or enable", args[index].Text)
 		}
 	}
 	m.Modules = slices.DeleteFunc(m.Modules, func(existing Module) bool { return existing.Name == module.Name })
@@ -566,6 +571,9 @@ func RenderDSL(m *Manifest) string {
 		}
 		if module.Windows != "" {
 			line += " windows " + QuoteWord(module.Windows)
+		}
+		if module.Enable {
+			line += " enable"
 		}
 		moduleLines = append(moduleLines, line)
 	}

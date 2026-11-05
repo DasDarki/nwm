@@ -21,8 +21,8 @@ type resourceCommandSpec struct {
 }
 
 var (
-	resourcePackages = resourceCommandSpec{use: "package", aliases: []string{"packages", "pkg"}, icon: "📦", kind: server.PackageKind}
-	resourceAssets   = resourceCommandSpec{use: "assets", aliases: []string{"asset"}, icon: "🎨", kind: server.AssetKind}
+	resourcePackages = resourceCommandSpec{use: "package", aliases: []string{"p", "packages", "pkg"}, icon: "📦", kind: server.PackageKind}
+	resourceAssets   = resourceCommandSpec{use: "assets", aliases: []string{"a", "asset"}, icon: "🎨", kind: server.AssetKind}
 )
 
 func newResourceCommand(spec resourceCommandSpec) *cobra.Command {
@@ -157,7 +157,7 @@ func newResourceListCommand(spec resourceCommandSpec) *cobra.Command {
 }
 
 func resourceEnabled(config *server.Config, kind server.Kind, resource server.Resource) bool {
-	if kind == server.PackageKind && resource.Type != "" && resource.Type != "script" {
+	if kind == server.PackageKind && server.SingleSlotType(resource.Type) {
 		return config.String("game."+resource.Type) == resource.Name
 	}
 	value, found := config.Get(kind.ConfigKey)
@@ -260,7 +260,11 @@ func enableResources(target *state.Server, kind server.Kind, names []string) err
 		}
 		ui.Success("Enabled %s %s", name, ui.Muted.Render("("+key+")"))
 	}
-	return config.Save()
+	if err := config.Save(); err != nil {
+		return err
+	}
+	warnBlockedCModules(target, nil)
+	return nil
 }
 
 func disableResources(target *state.Server, kind server.Kind, names []string) error {

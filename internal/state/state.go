@@ -13,16 +13,35 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+type UnsafeLibsApproval struct {
+	ApprovedAt time.Time `toml:"approved_at"`
+	Modules    []string  `toml:"modules"`
+}
+
+func (a *UnsafeLibsApproval) Covers(modules []string) bool {
+	if a == nil {
+		return false
+	}
+	for _, module := range modules {
+		if !slices.Contains(a.Modules, module) {
+			return false
+		}
+	}
+	return true
+}
+
 type Server struct {
-	Name      string    `toml:"name"`
-	Path      string    `toml:"path"`
-	Branch    string    `toml:"branch"`
-	CreatedAt time.Time `toml:"created_at"`
-	UpdatedAt time.Time `toml:"updated_at"`
+	Name       string              `toml:"name"`
+	Path       string              `toml:"path"`
+	Branch     string              `toml:"branch"`
+	CreatedAt  time.Time           `toml:"created_at"`
+	UpdatedAt  time.Time           `toml:"updated_at"`
+	UnsafeLibs *UnsafeLibsApproval `toml:"unsafe_libs,omitempty"`
 }
 
 type State struct {
-	Servers []Server `toml:"servers"`
+	AllowUnsafeLibs bool     `toml:"allow_unsafe_libs,omitempty"`
+	Servers         []Server `toml:"servers"`
 }
 
 func Load() (*State, error) {

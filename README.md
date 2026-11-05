@@ -56,6 +56,9 @@ nwm server start dev
 | `nwm secret list\|get\|set\|rotate\|remove` | Manage a server's passwords and tokens |
 | `nwm self-update` | Update nwm itself |
 
+Short aliases: `nwm s` (server), `nwm p` (package), `nwm a` (assets), `nwm n`/`nwm ns` (nanossharp), `nwm r` (recipe),
+`nwm svc` (service), `nwm sec` (secret) and `nwm su` (self-update).
+
 Commands that target a server pick it by name, by the current directory, or automatically when only one server exists.
 
 ## Recipes
@@ -111,7 +114,7 @@ package roleplay-core git https://github.com/you/roleplay-core.git ref v2.1.0 en
 package dev-tools path packages/dev-tools
 assets nanos-world
 
-module mysql linux https://example.com/mysql.so windows https://example.com/mysql.dll
+module mysql linux https://example.com/libmysql.so windows https://example.com/mysql.dll enable
 file files/NanosSharp.toml NanosSharp.toml template
 
 use postgres
@@ -138,7 +141,7 @@ Named entries (`package x`, `service x`, `var x`, `config k`, `env K`) replace e
 | `config <key> <value>` | `cfg` | Value in `Config.toml`, e.g. `discover.port` |
 | `package <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>]` | `pkg` | Package from the vault (name only), git or the recipe folder. `enable` loads it |
 | `assets <name> [...]` | `asset` | Asset pack, same options |
-| `module <name> [linux <src>] [windows <src>]` | `mod` | C module copied into `Modules/`, from a URL or the recipe |
+| `module <name> [linux <src>] [windows <src>] [enable]` | `mod` | C module package built from prebuilt `.so`/`.dll` files or archives (URL or recipe path) |
 | `file <source> <target> [template]` | | Copy a file or folder into the server, `template` expands placeholders |
 | `use <image> [as <name>] [port <host port>] [env K=V]...` | `require_service`, `requires` | Service with presets, see below |
 | `service <name> <image> [port <p>] [env K=V] [volume <v>] [ready "<check>"] [nowait] [command <args>...]` | `svc` | Docker service started with the server |
@@ -149,6 +152,27 @@ Named entries (`package x`, `service x`, `var x`, `config k`, `env K`) replace e
 Built-in variables: `${server.name}`, `${server.path}`, `${os}`.
 `recipe.toml` holds the same data as TOML tables (`[recipe]`, `[server]`, `[variables]`, `[config]`, `[[package]]`,
 `[[assets]]`, `[[module]]`, `[[file]]`, `[[service]]`, `[[secret]]`, `[env]`, `[[hook]]`), see `nwm recipe show --format toml`.
+
+### C modules
+
+C modules are packages of type `c_module` ([docs](https://docs.nanos-world.com/docs/core-concepts/packages/c-module)).
+Install them like any package (vault, `git`, `path`) or let `module` build one from prebuilt binaries: nwm puts them into
+`Packages/<name>/` and writes a `Package.toml` with `[c_module] modules = [...]` unless the archive ships one
+(`libexample.so` and `example.dll` become the module `example`).
+
+The server only loads C modules when started with `--enable_unsafe_libs`, which also unlocks unsafe Lua libraries.
+Recipes may request it with `arg --enable_unsafe_libs`, but nwm asks once before the first start of each server:
+`[y]` allows it for this server, `[a]` for all servers, anything else starts the server without the flag. Without a
+terminal the flag is dropped with a warning. nwm asks again when new C modules are enabled. The approval lives in
+`~/.nwm/state.toml`, out of reach for recipes.
+
+| Command | Effect |
+|---|---|
+| `nwm s start <name> --allow-unsafe-libs` | Approve without asking (scripts, CI) |
+| `nwm s start <name> -- --enable_unsafe_libs` | Pass the flag yourself for one start |
+| `nwm s trust [name]` | Show or grant the approval |
+| `nwm s trust [name] --revoke` | Withdraw it |
+| `nwm s trust --global [--revoke]` | Always allow it for every server, or stop doing so |
 
 ### Service presets
 

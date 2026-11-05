@@ -29,7 +29,14 @@ var (
 	AssetKind   = Kind{Singular: "asset pack", Plural: "asset packs", CliWord: "assets", Directory: "Assets", Manifest: "Assets.toml", ConfigKey: "game.assets"}
 )
 
-var packageTypes = []string{"game_mode", "map", "loading_screen", "script"}
+var (
+	packageTypes    = []string{"game_mode", "map", "loading_screen", "c_module", "script"}
+	singleSlotTypes = []string{"game_mode", "map", "loading_screen"}
+)
+
+func SingleSlotType(packageType string) bool {
+	return slices.Contains(singleSlotTypes, packageType)
+}
 
 type Resource struct {
 	Name    string
@@ -120,8 +127,34 @@ func Vault(ctx context.Context, directory string, action string, kind Kind, name
 	return nil
 }
 
+const UnsafeLibsFlag = "--enable_unsafe_libs"
+
+func BlockedCModules(directory string, arguments []string) []string {
+	if slices.Contains(arguments, UnsafeLibsFlag) {
+		return nil
+	}
+	return EnabledCModules(directory)
+}
+
+func EnabledCModules(directory string) []string {
+	config, err := LoadConfig(directory)
+	if err != nil {
+		return nil
+	}
+	value, _ := config.Get(PackageKind.ConfigKey)
+	entries, _ := value.([]any)
+	var blocked []string
+	for _, entry := range entries {
+		name := fmt.Sprint(entry)
+		if resource, err := FindResource(directory, PackageKind, name); err == nil && resource.Type == "c_module" {
+			blocked = append(blocked, name)
+		}
+	}
+	return blocked
+}
+
 func Enable(config *Config, kind Kind, resource *Resource) (string, error) {
-	if kind == AssetKind || resource.Type == "" || resource.Type == "script" {
+	if kind == AssetKind || !SingleSlotType(resource.Type) {
 		added, err := config.AddToList(kind.ConfigKey, resource.Name)
 		if err != nil || !added {
 			return "", err
@@ -142,7 +175,7 @@ func Disable(config *Config, kind Kind, name string) ([]string, error) {
 		changed = append(changed, kind.ConfigKey)
 	}
 	if kind == PackageKind {
-		for _, candidate := range packageTypes {
+		for _, candidate := range singleSlotTypes {
 			key := "game." + candidate
 			if config.String(key) == name {
 				if err := config.Set(key, ""); err != nil {

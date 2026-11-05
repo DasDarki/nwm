@@ -51,6 +51,7 @@ type Module struct {
 	Name    string `toml:"name"`
 	Linux   string `toml:"linux,omitempty"`
 	Windows string `toml:"windows,omitempty"`
+	Enable  bool   `toml:"enable,omitempty"`
 }
 
 type File struct {
@@ -160,8 +161,8 @@ func (m *Manifest) Validate(directory string) error {
 	validateResources("package", m.Packages)
 	validateResources("assets", m.Assets)
 	for _, module := range m.Modules {
-		if module.Name == "" || (module.Linux == "" && module.Windows == "") {
-			add("module %q needs a name and a linux and/or windows source", module.Name)
+		if !resourceNamePattern.MatchString(module.Name) || (module.Linux == "" && module.Windows == "") {
+			add("module %q needs a valid name and a linux and/or windows source", module.Name)
 		}
 		for _, source := range []string{module.Linux, module.Windows} {
 			if source != "" && !isURL(source) {

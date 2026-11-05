@@ -65,3 +65,15 @@ func TestParseValue(t *testing.T) {
 		t.Errorf("expected list, got %v", list)
 	}
 }
+
+func TestEnableCModuleUsesPackageList(t *testing.T) {
+	config, _ := LoadConfig(t.TempDir())
+	key, err := Enable(config, PackageKind, &Resource{Name: "mysql", Type: "c_module"})
+	if err != nil || key != "game.packages" {
+		t.Fatalf("Enable returned %q, %v", key, err)
+	}
+	gameModeKey, _ := Enable(config, PackageKind, &Resource{Name: "sandbox", Type: "game_mode"})
+	if gameModeKey != "game.game_mode" || config.String("game.game_mode") != "sandbox" {
+		t.Errorf("game modes should stay single values, got %q", gameModeKey)
+	}
+}

@@ -260,6 +260,7 @@ func newRecipeApplyCommand() *cobra.Command {
 				return err
 			}
 			ui.Step("🎉", "Applied %s to %s", fetched.Manifest.Recipe.Name, ui.Accent.Render(target.Name))
+			warnBlockedCModules(target, nil)
 			return nil
 		},
 	}

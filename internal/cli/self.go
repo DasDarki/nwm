@@ -15,7 +15,7 @@ func newSelfUpdateCommand() *cobra.Command {
 	var force bool
 	command := &cobra.Command{
 		Use:     "self-update",
-		Aliases: []string{"upgrade"},
+		Aliases: []string{"su", "upgrade"},
 		Short:   "⚡ Update nwm to the latest release",
 		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {

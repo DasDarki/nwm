@@ -12,7 +12,7 @@ import (
 func newSecretCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "secret",
-		Aliases: []string{"secrets"},
+		Aliases: []string{"sec", "secrets"},
 		Short:   "🔑 Manage a server's secrets (passwords, tokens)",
 		Long: "Secrets are stored per server in ~/.nwm/secrets/<server>.toml (readable only by you)\n" +
 			"and referenced in recipes as ${secret.name}. Recipes create them on apply.",

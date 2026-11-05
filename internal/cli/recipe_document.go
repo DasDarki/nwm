@@ -141,7 +141,8 @@ func newRecipeAddCommand() *cobra.Command {
 		Example: "  nwm recipe add package sandbox enable\n" +
 			"  nwm recipe add use postgres\n" +
 			"  nwm recipe add config discover.port 7790\n" +
-			"  nwm recipe add secret steam_token prompt",
+			"  nwm recipe add secret steam_token prompt\n" +
+			"  nwm recipe add -C staging.Recipefile arg --enable_unsafe_libs",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeStatement(nil, false),
 		RunE: func(_ *cobra.Command, arguments []string) error {
@@ -164,6 +165,7 @@ func newRecipeAddCommand() *cobra.Command {
 		},
 	}
 	addRecipeDirFlag(command, &directory)
+	command.Flags().SetInterspersed(false)
 	return command
 }
 
@@ -194,6 +196,7 @@ func newRecipeRemoveCommand() *cobra.Command {
 		},
 	}
 	addRecipeDirFlag(command, &directory)
+	command.Flags().SetInterspersed(false)
 	return command
 }
 

@@ -8,6 +8,8 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -177,8 +179,8 @@ func placeResources(ctx context.Context, recipeDir string, serverDir string, kin
 }
 
 func installModules(ctx context.Context, recipeDir string, serverDir string, modules []Module, report ui.Reporter) error {
-	moduleDir := filepath.Join(serverDir, "Modules")
-	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+	parent := filepath.Join(serverDir, server.PackageKind.Directory)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
 	for _, module := range modules {
@@ -190,34 +192,96 @@ func installModules(ctx context.Context, recipeDir string, serverDir string, mod
 			report.Status(fmt.Sprintf("module %s has no %s build, skipping", module.Name, runtime.GOOS))
 			continue
 		}
-		local := source
-		if isURL(source) {
-			local = filepath.Join(home.CacheDir(), "modules", module.Name, path.Base(strings.SplitN(source, "?", 2)[0]))
-			if err := download.File(ctx, source, local, ui.DownloadProgress(report, "downloading "+module.Name)); err != nil {
-				return err
-			}
-			report.Progress(-1)
-		} else {
-			joined, err := fsutil.SafeJoin(recipeDir, source)
-			if err != nil {
-				return err
-			}
-			local = joined
-		}
-		var err error
-		switch {
-		case strings.HasSuffix(local, ".zip"):
-			err = download.ExtractZip(local, moduleDir)
-		case strings.HasSuffix(local, ".tar.gz"), strings.HasSuffix(local, ".tgz"):
-			err = download.ExtractTarGz(local, moduleDir)
-		default:
-			err = fsutil.CopyFile(local, filepath.Join(moduleDir, filepath.Base(local)))
-		}
-		if err != nil {
+		if err := installModule(ctx, recipeDir, parent, module, source, report); err != nil {
 			return fmt.Errorf("module %s: %w", module.Name, err)
 		}
 	}
 	return nil
+}
+
+func installModule(ctx context.Context, recipeDir string, parent string, module Module, source string, report ui.Reporter) error {
+	local := source
+	if isURL(source) {
+		local = filepath.Join(home.CacheDir(), "modules", module.Name, path.Base(strings.SplitN(source, "?", 2)[0]))
+		if err := download.File(ctx, source, local, ui.DownloadProgress(report, "downloading "+module.Name)); err != nil {
+			return err
+		}
+		report.Progress(-1)
+	} else {
+		joined, err := fsutil.SafeJoin(recipeDir, source)
+		if err != nil {
+			return err
+		}
+		local = joined
+	}
+	staged, err := os.MkdirTemp(parent, ".nwm-module-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(staged)
+	switch {
+	case strings.HasSuffix(local, ".zip"):
+		err = download.ExtractZip(local, staged)
+	case strings.HasSuffix(local, ".tar.gz"), strings.HasSuffix(local, ".tgz"):
+		err = download.ExtractTarGz(local, staged)
+	default:
+		err = fsutil.Copy(local, filepath.Join(staged, filepath.Base(local)))
+	}
+	if err != nil {
+		return err
+	}
+	root := packageRoot(staged)
+	if !fsutil.Exists(filepath.Join(root, server.PackageKind.Manifest)) {
+		names := moduleNames(root)
+		if len(names) == 0 {
+			return fmt.Errorf("no .so or .dll found in %s", source)
+		}
+		if err := os.WriteFile(filepath.Join(root, server.PackageKind.Manifest), []byte(modulePackageManifest(module.Name, names)), 0o644); err != nil {
+			return err
+		}
+	}
+	return fsutil.ReplaceDir(root, filepath.Join(parent, module.Name))
+}
+
+func packageRoot(directory string) string {
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) != 1 || !entries[0].IsDir() {
+		return directory
+	}
+	return filepath.Join(directory, entries[0].Name())
+}
+
+func moduleNames(directory string) []string {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, entry := range entries {
+		name := entry.Name()
+		var module string
+		switch {
+		case strings.HasSuffix(name, ".dll"):
+			module = strings.TrimSuffix(name, ".dll")
+		case strings.HasSuffix(name, ".so"):
+			module = strings.TrimPrefix(strings.TrimSuffix(name, ".so"), "lib")
+		default:
+			continue
+		}
+		if module != "" && !slices.Contains(names, module) {
+			names = append(names, module)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+func modulePackageManifest(name string, modules []string) string {
+	quoted := make([]string, len(modules))
+	for index, module := range modules {
+		quoted[index] = strconv.Quote(module)
+	}
+	return fmt.Sprintf("[meta]\ntitle = %s\nauthor = \"nwm\"\nversion = \"1.0.0\"\n\n[c_module]\nmodules = [%s]\n", strconv.Quote(name), strings.Join(quoted, ", "))
 }
 
 func copyFiles(recipeDir string, target Target, files []File, options ApplyOptions, defaults map[string]any, report ui.Reporter) error {
@@ -263,10 +327,20 @@ func writeConfiguration(serverDir string, manifest *Manifest) error {
 		return err
 	}
 	config.Merge(manifest.Config)
+	modulePackages := make([]Resource, 0, len(manifest.Modules))
+	for _, module := range manifest.Modules {
+		source := module.Linux
+		if runtime.GOOS == "windows" {
+			source = module.Windows
+		}
+		if source != "" {
+			modulePackages = append(modulePackages, Resource{Name: module.Name, Enable: module.Enable})
+		}
+	}
 	for _, group := range []struct {
 		kind      server.Kind
 		resources []Resource
-	}{{server.PackageKind, manifest.Packages}, {server.AssetKind, manifest.Assets}} {
+	}{{server.PackageKind, manifest.Packages}, {server.PackageKind, modulePackages}, {server.AssetKind, manifest.Assets}} {
 		for _, resource := range group.resources {
 			if !resource.Enable {
 				continue

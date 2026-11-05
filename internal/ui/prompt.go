@@ -33,6 +33,19 @@ func Confirm(question string) bool {
 	return answer == "y" || answer == "yes"
 }
 
+func Choose(question string, options string, fallback string) string {
+	if !StdinInteractive() {
+		return fallback
+	}
+	fmt.Fprintf(os.Stderr, "❓ %s %s ", Bold.Render(question), Muted.Render(options))
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	if answer == "" {
+		return fallback
+	}
+	return answer[:1]
+}
+
 func OpenBrowser(url string) error {
 	var command *exec.Cmd
 	switch runtime.GOOS {

@@ -14,7 +14,7 @@ import (
 func newNanosSharpCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "nanossharp",
-		Aliases: []string{"sharp", "cs"},
+		Aliases: []string{"n", "ns", "sharp", "cs"},
 		Short:   "🧩 Install, update and remove NanosSharp (C# scripting)",
 	}
 	command.AddCommand(

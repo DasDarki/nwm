@@ -29,7 +29,7 @@ package rp-core git https://github.com/me/rp-core.git ref v2.1.0 enable
 package dev-tools path packages/dev-tools
 asset nanos-world
 
-mod mysql linux https://example.com/mysql.so windows "C:\\mods\\mysql.dll"
+mod mysql linux https://example.com/mysql.so windows "C:\\mods\\mysql.dll" enable
 file files/NanosSharp.toml NanosSharp.toml template
 
 use postgres
@@ -61,7 +61,7 @@ func TestParseDSL(t *testing.T) {
 	if len(manifest.Packages) != 3 || !manifest.Packages[1].Enable || manifest.Packages[1].Ref != "v2.1.0" {
 		t.Errorf("packages: %+v", manifest.Packages)
 	}
-	if manifest.Modules[0].Windows != `C:\mods\mysql.dll` {
+	if manifest.Modules[0].Windows != `C:\mods\mysql.dll` || !manifest.Modules[0].Enable {
 		t.Errorf("module escape: %q", manifest.Modules[0].Windows)
 	}
 	if len(manifest.Services) != 3 {

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DasDarki/nwm/internal/home"
@@ -26,7 +27,7 @@ import (
 func newServerCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "server",
-		Aliases: []string{"servers", "srv"},
+		Aliases: []string{"s", "servers", "srv"},
 		Short:   "🖥️  Create, update and run nanos world servers",
 	}
 	command.AddCommand(
@@ -41,6 +42,7 @@ func newServerCommand() *cobra.Command {
 		newServerLogsCommand(),
 		newServerRemoveCommand(),
 		newServerConfigCommand(),
+		newServerTrustCommand(),
 	)
 	return command
 }
@@ -412,6 +414,7 @@ func newServerInfoCommand() *cobra.Command {
 func newServerStartCommand() *cobra.Command {
 	var detach bool
 	var skipServices bool
+	var allowUnsafe bool
 	command := &cobra.Command{
 		Use:   "start [name] [-- server arguments]",
 		Short: "Start a server in the foreground or in the background",
@@ -422,15 +425,16 @@ func newServerStartCommand() *cobra.Command {
 		ValidArgsFunction: completeServerNames,
 		RunE: func(command *cobra.Command, arguments []string) error {
 			name, extra := splitServerArguments(command, arguments)
-			_, target, err := resolveServer(name)
+			current, target, err := resolveServer(name)
 			if err != nil {
 				return err
 			}
-			return startServer(target, extra, detach, skipServices)
+			return startServer(current, target, extra, startOptions{detach: detach, skipServices: skipServices, allowUnsafe: allowUnsafe})
 		},
 	}
 	command.Flags().BoolVarP(&detach, "detach", "d", false, "run in the background and write output to the log file")
 	command.Flags().BoolVar(&skipServices, "no-services", false, "do not start the server's Docker services")
+	command.Flags().BoolVar(&allowUnsafe, "allow-unsafe-libs", false, "approve "+server.UnsafeLibsFlag+" from the recipe without asking")
 	return command
 }
 
@@ -442,17 +446,42 @@ func splitServerArguments(command *cobra.Command, arguments []string) (string, [
 	return optionalServerName(arguments[:dash]), arguments[dash:]
 }
 
-func startServer(target *state.Server, extra []string, detach bool, skipServices bool) error {
+func warnBlockedCModules(target *state.Server, extra []string) {
+	arguments := extra
+	if local, err := server.LoadLocal(target.Path); err == nil {
+		arguments = append(append([]string{}, local.Args...), extra...)
+	}
+	blocked := server.BlockedCModules(target.Path, arguments)
+	if len(blocked) == 0 {
+		return
+	}
+	ui.Warn("C modules (%s) only load with %s, which allows native code and unsafe Lua libraries", strings.Join(blocked, ", "), server.UnsafeLibsFlag)
+	ui.Hint("if you trust them, add %s to the recipe (nwm asks once on start) or run %s", ui.Command("arg "+server.UnsafeLibsFlag), ui.Command("nwm s start "+target.Name+" -- "+server.UnsafeLibsFlag))
+}
+
+type startOptions struct {
+	detach       bool
+	skipServices bool
+	allowUnsafe  bool
+}
+
+func startServer(current *state.State, target *state.Server, extra []string, options startOptions) error {
+	detach := options.detach
 	local, err := server.LoadLocal(target.Path)
 	if err != nil {
 		return err
 	}
-	if !skipServices {
+	recipeArguments, err := guardUnsafeLibs(current, target, local.Args, extra, options.allowUnsafe)
+	if err != nil {
+		return err
+	}
+	if !options.skipServices {
 		if err := upServices(target, local.Services); err != nil {
 			return err
 		}
 	}
-	arguments := append(append([]string{}, local.Args...), extra...)
+	arguments := append(append([]string{}, recipeArguments...), extra...)
+	warnBlockedCModules(target, arguments)
 	environment, err := server.EnvList(target.Path)
 	if err != nil {
 		return err
@@ -521,6 +550,7 @@ func newServerStopCommand() *cobra.Command {
 
 func newServerRestartCommand() *cobra.Command {
 	var timeout time.Duration
+	var allowUnsafe bool
 	command := &cobra.Command{
 		Use:               "restart [name] [-- server arguments]",
 		Short:             "Restart a server in the background",
@@ -528,7 +558,7 @@ func newServerRestartCommand() *cobra.Command {
 		ValidArgsFunction: completeServerNames,
 		RunE: func(command *cobra.Command, arguments []string) error {
 			name, extra := splitServerArguments(command, arguments)
-			_, target, err := resolveServer(name)
+			current, target, err := resolveServer(name)
 			if err != nil {
 				return err
 			}
@@ -539,10 +569,11 @@ func newServerRestartCommand() *cobra.Command {
 					return err
 				}
 			}
-			return startServer(target, extra, true, false)
+			return startServer(current, target, extra, startOptions{detach: true, allowUnsafe: allowUnsafe})
 		},
 	}
 	command.Flags().DurationVar(&timeout, "timeout", 15*time.Second, "time to wait before killing the server")
+	command.Flags().BoolVar(&allowUnsafe, "allow-unsafe-libs", false, "approve "+server.UnsafeLibsFlag+" from the recipe without asking")
 	return command
 }
 
