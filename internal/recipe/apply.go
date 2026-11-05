@@ -1,0 +1,351 @@
+package recipe
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/DasDarki/nwm/internal/docker"
+	"github.com/DasDarki/nwm/internal/download"
+	"github.com/DasDarki/nwm/internal/fsutil"
+	"github.com/DasDarki/nwm/internal/home"
+	"github.com/DasDarki/nwm/internal/nanossharp"
+	"github.com/DasDarki/nwm/internal/server"
+	"github.com/DasDarki/nwm/internal/ui"
+)
+
+type Target struct {
+	Name string
+	Dir  string
+}
+
+type ApplyOptions struct {
+	Variables    map[string]string
+	SkipServices bool
+	SkipHooks    bool
+}
+
+func Builtins(target Target) map[string]string {
+	return map[string]string{
+		"server.name": target.Name,
+		"server.path": target.Dir,
+		"os":          runtime.GOOS,
+	}
+}
+
+func Resolve(fetched *Fetched, target Target, overrides map[string]string) (*Manifest, error) {
+	parsed := map[string]any{}
+	for key, raw := range overrides {
+		parsed[key] = server.ParseValue(raw)
+	}
+	expander := NewExpander(fetched.Manifest.Variables, parsed, Builtins(target))
+	expanded := fetched.Manifest.Expand(expander)
+	return expanded, expander.Err()
+}
+
+func Apply(fetched *Fetched, manifest *Manifest, target Target, options ApplyOptions) error {
+	steps := []struct {
+		title string
+		skip  bool
+		run   ui.Task
+	}{
+		{"Installing vault packages", !hasVault(manifest.Packages), func(ctx context.Context, report ui.Reporter) error {
+			return server.Vault(ctx, target.Dir, "install", server.PackageKind, vaultNames(manifest.Packages), report)
+		}},
+		{"Installing vault asset packs", !hasVault(manifest.Assets), func(ctx context.Context, report ui.Reporter) error {
+			return server.Vault(ctx, target.Dir, "install", server.AssetKind, vaultNames(manifest.Assets), report)
+		}},
+		{"Installing recipe packages", !hasLocal(manifest.Packages), func(ctx context.Context, report ui.Reporter) error {
+			return placeResources(ctx, fetched.Dir, target.Dir, server.PackageKind, manifest.Packages, report)
+		}},
+		{"Installing recipe asset packs", !hasLocal(manifest.Assets), func(ctx context.Context, report ui.Reporter) error {
+			return placeResources(ctx, fetched.Dir, target.Dir, server.AssetKind, manifest.Assets, report)
+		}},
+		{"Installing C modules", len(manifest.Modules) == 0, func(ctx context.Context, report ui.Reporter) error {
+			return installModules(ctx, fetched.Dir, target.Dir, manifest.Modules, report)
+		}},
+		{"Copying files", len(manifest.Files) == 0, func(_ context.Context, report ui.Reporter) error {
+			return copyFiles(fetched.Dir, target, manifest.Files, options.Variables, fetched.Manifest.Variables, report)
+		}},
+		{"Writing configuration", false, func(context.Context, ui.Reporter) error {
+			return writeConfiguration(target.Dir, manifest)
+		}},
+		{"Installing NanosSharp", !manifest.Server.NanosSharp || nanossharp.Installed(target.Dir), func(ctx context.Context, report ui.Reporter) error {
+			return nanossharp.Install(ctx, target.Dir, report)
+		}},
+		{"Recording recipe", false, func(context.Context, ui.Reporter) error {
+			return recordRecipe(fetched, manifest, target, options.Variables)
+		}},
+		{"Starting services", options.SkipServices || len(manifest.Services) == 0, func(ctx context.Context, report ui.Reporter) error {
+			if err := docker.Available(ctx); err != nil {
+				return err
+			}
+			for _, service := range manifest.Services {
+				if err := docker.Up(ctx, target.Name, target.Dir, service, report); err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
+	}
+	for _, step := range steps {
+		if step.skip {
+			continue
+		}
+		if err := ui.Run(step.title, step.run); err != nil {
+			return err
+		}
+	}
+	if options.SkipHooks {
+		return nil
+	}
+	return runHooks(target, fetched.Dir, manifest.Hooks)
+}
+
+func hasVault(resources []Resource) bool {
+	return len(vaultNames(resources)) > 0
+}
+
+func hasLocal(resources []Resource) bool {
+	return len(resources) > len(vaultNames(resources))
+}
+
+func vaultNames(resources []Resource) []string {
+	var names []string
+	for _, resource := range resources {
+		if resource.FromVault() {
+			names = append(names, resource.Name)
+		}
+	}
+	return names
+}
+
+func placeResources(ctx context.Context, recipeDir string, serverDir string, kind server.Kind, resources []Resource, report ui.Reporter) error {
+	parent := filepath.Join(serverDir, kind.Directory)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	for _, resource := range resources {
+		if resource.FromVault() {
+			continue
+		}
+		target := filepath.Join(parent, resource.Name)
+		if resource.Git != "" {
+			report.Status("cloning " + resource.Name)
+			if err := CloneInto(ctx, resource.Git, resource.Ref, resource.Subdir, target, report); err != nil {
+				return fmt.Errorf("%s %s: %w", kind.Singular, resource.Name, err)
+			}
+		} else {
+			report.Status("copying " + resource.Name)
+			source, err := fsutil.SafeJoin(recipeDir, resource.Path)
+			if err != nil {
+				return err
+			}
+			staged, err := os.MkdirTemp(parent, ".nwm-copy-")
+			if err != nil {
+				return err
+			}
+			if err := fsutil.CopyDir(source, staged, fsutil.SkipGit); err != nil {
+				os.RemoveAll(staged)
+				return err
+			}
+			if err := fsutil.ReplaceDir(staged, target); err != nil {
+				os.RemoveAll(staged)
+				return err
+			}
+		}
+		if _, err := server.FindResource(serverDir, kind, resource.Name); err != nil {
+			return fmt.Errorf("%s %s has no %s", kind.Singular, resource.Name, kind.Manifest)
+		}
+	}
+	return nil
+}
+
+func installModules(ctx context.Context, recipeDir string, serverDir string, modules []Module, report ui.Reporter) error {
+	moduleDir := filepath.Join(serverDir, "Modules")
+	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+		return err
+	}
+	for _, module := range modules {
+		source := module.Linux
+		if runtime.GOOS == "windows" {
+			source = module.Windows
+		}
+		if source == "" {
+			report.Status(fmt.Sprintf("module %s has no %s build, skipping", module.Name, runtime.GOOS))
+			continue
+		}
+		local := source
+		if isURL(source) {
+			local = filepath.Join(home.CacheDir(), "modules", module.Name, path.Base(strings.SplitN(source, "?", 2)[0]))
+			if err := download.File(ctx, source, local, ui.DownloadProgress(report, "downloading "+module.Name)); err != nil {
+				return err
+			}
+			report.Progress(-1)
+		} else {
+			joined, err := fsutil.SafeJoin(recipeDir, source)
+			if err != nil {
+				return err
+			}
+			local = joined
+		}
+		var err error
+		switch {
+		case strings.HasSuffix(local, ".zip"):
+			err = download.ExtractZip(local, moduleDir)
+		case strings.HasSuffix(local, ".tar.gz"), strings.HasSuffix(local, ".tgz"):
+			err = download.ExtractTarGz(local, moduleDir)
+		default:
+			err = fsutil.CopyFile(local, filepath.Join(moduleDir, filepath.Base(local)))
+		}
+		if err != nil {
+			return fmt.Errorf("module %s: %w", module.Name, err)
+		}
+	}
+	return nil
+}
+
+func copyFiles(recipeDir string, target Target, files []File, overrides map[string]string, defaults map[string]any, report ui.Reporter) error {
+	parsed := map[string]any{}
+	for key, raw := range overrides {
+		parsed[key] = server.ParseValue(raw)
+	}
+	for _, file := range files {
+		source, err := fsutil.SafeJoin(recipeDir, file.Source)
+		if err != nil {
+			return err
+		}
+		destination, err := fsutil.SafeJoin(target.Dir, file.Target)
+		if err != nil {
+			return err
+		}
+		report.Status(file.Source + " -> " + file.Target)
+		if !file.Template {
+			if err := fsutil.Copy(source, destination); err != nil {
+				return err
+			}
+			continue
+		}
+		content, err := os.ReadFile(source)
+		if err != nil {
+			return err
+		}
+		expander := NewExpander(defaults, parsed, Builtins(target))
+		rendered := expander.String(string(content))
+		if err := expander.Err(); err != nil {
+			return fmt.Errorf("%s: %w", file.Source, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(destination, []byte(rendered), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeConfiguration(serverDir string, manifest *Manifest) error {
+	config, err := server.LoadConfig(serverDir)
+	if err != nil {
+		return err
+	}
+	config.Merge(manifest.Config)
+	for _, group := range []struct {
+		kind      server.Kind
+		resources []Resource
+	}{{server.PackageKind, manifest.Packages}, {server.AssetKind, manifest.Assets}} {
+		for _, resource := range group.resources {
+			if !resource.Enable {
+				continue
+			}
+			found, err := server.FindResource(serverDir, group.kind, resource.Name)
+			if err != nil {
+				return fmt.Errorf("cannot enable %s: %w", resource.Name, err)
+			}
+			if _, err := server.Enable(config, group.kind, found); err != nil {
+				return err
+			}
+		}
+	}
+	if err := config.Save(); err != nil {
+		return err
+	}
+	if len(manifest.Env) == 0 {
+		return nil
+	}
+	values := map[string]string{}
+	for key, value := range manifest.Env {
+		values[key] = fmt.Sprint(value)
+	}
+	return server.MergeEnv(serverDir, values)
+}
+
+func recordRecipe(fetched *Fetched, manifest *Manifest, target Target, variables map[string]string) error {
+	local, err := server.LoadLocal(target.Dir)
+	if err != nil {
+		return err
+	}
+	local.Recipe = &server.AppliedRecipe{
+		Source:    fetched.Source.Raw,
+		Name:      manifest.Recipe.Name,
+		Version:   fetched.Version,
+		Commit:    fetched.Commit,
+		AppliedAt: time.Now(),
+		Variables: variables,
+	}
+	if len(manifest.Server.Args) > 0 {
+		local.Args = manifest.Server.Args
+	}
+	for _, service := range manifest.Services {
+		local.PutService(service)
+	}
+	return local.Save()
+}
+
+func runHooks(target Target, recipeDir string, hooks []Hook) error {
+	for _, hook := range hooks {
+		directory := target.Dir
+		if hook.Dir != "" {
+			joined, err := fsutil.SafeJoin(target.Dir, hook.Dir)
+			if err != nil {
+				return err
+			}
+			directory = joined
+		}
+		ui.Step("🪝", "%s", strings.Join(hook.Run, " "))
+		command := exec.Command(hook.Run[0], hook.Run[1:]...)
+		command.Dir = directory
+		command.Env = append(os.Environ(), "NWM_SERVER="+target.Name, "NWM_SERVER_DIR="+target.Dir, "NWM_RECIPE_DIR="+recipeDir)
+		command.Stdin = os.Stdin
+		command.Stdout = os.Stdout
+		command.Stderr = os.Stderr
+		if err := command.Run(); err != nil {
+			return fmt.Errorf("hook %q failed: %w", strings.Join(hook.Run, " "), err)
+		}
+	}
+	return nil
+}
+
+func (m *Manifest) Summary() []string {
+	var lines []string
+	add := func(label string, count int) {
+		if count > 0 {
+			lines = append(lines, fmt.Sprintf("%d %s", count, label))
+		}
+	}
+	add("packages", len(m.Packages))
+	add("asset packs", len(m.Assets))
+	add("C modules", len(m.Modules))
+	add("files", len(m.Files))
+	add("services", len(m.Services))
+	add("env variables", len(m.Env))
+	add("hooks", len(m.Hooks))
+	return lines
+}

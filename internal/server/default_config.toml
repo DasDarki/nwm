@@ -1,0 +1,36 @@
+[discover]
+name = "nanos world server"
+description = ""
+language = "global"
+ip = "0.0.0.0"
+port = 7777
+query_port = 7778
+announce = true
+dedicated_server = true
+
+[general]
+max_players = 64
+password = ""
+token = ""
+banned_ids = []
+
+[game]
+map = "default-blank-map"
+game_mode = ""
+packages = []
+assets = []
+loading_screen = ""
+
+[custom_settings]
+
+[debug]
+log_level = 1
+async_log = true
+profiling = false
+
+[optimization]
+max_tick_rate = 30
+max_sync_rate = 30
+max_send_rate = 2048
+max_file_transfer_rate = 2048
+distance_optimization = 4
