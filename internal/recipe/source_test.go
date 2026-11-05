@@ -32,7 +32,7 @@ func TestParseSource(t *testing.T) {
 }
 
 func TestExpanderKeepsTypes(t *testing.T) {
-	expander := NewExpander(map[string]any{"port": int64(7777)}, map[string]any{"port": int64(7790)}, map[string]string{"server.name": "dev"})
+	expander := NewExpander(map[string]any{"port": int64(7777)}, map[string]any{"port": int64(7790)}, map[string]string{"server.name": "dev"}, nil)
 	if value := expander.Value("${port}"); value != int64(7790) {
 		t.Errorf("expected typed override, got %#v", value)
 	}

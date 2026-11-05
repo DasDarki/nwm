@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/DasDarki/nwm/internal/docker"
+	"github.com/DasDarki/nwm/internal/recipe"
+	"github.com/DasDarki/nwm/internal/secrets"
 	"github.com/DasDarki/nwm/internal/server"
 	"github.com/DasDarki/nwm/internal/state"
 	"github.com/DasDarki/nwm/internal/ui"
@@ -143,12 +145,20 @@ func upServices(target *state.Server, services []docker.Service) error {
 	if len(services) == 0 {
 		return nil
 	}
+	store, err := secrets.Open(target.Name)
+	if err != nil {
+		return err
+	}
 	return ui.Run(fmt.Sprintf("Starting %d service(s) for %s", len(services), target.Name), func(ctx context.Context, report ui.Reporter) error {
 		if err := docker.Available(ctx); err != nil {
 			return err
 		}
 		for _, service := range services {
-			if err := docker.Up(ctx, target.Name, target.Path, service, report); err != nil {
+			resolved, err := recipe.ResolveServiceSecrets(service, store.Values())
+			if err != nil {
+				return fmt.Errorf("%w (set it with nwm secret set)", err)
+			}
+			if err := docker.Up(ctx, target.Name, target.Path, resolved, report); err != nil {
 				return err
 			}
 		}

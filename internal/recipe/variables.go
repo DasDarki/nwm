@@ -12,24 +12,42 @@ import (
 
 var placeholderPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_.]*)\}`)
 
+const secretPrefix = "secret."
+
 type Expander struct {
-	values  map[string]any
-	missing map[string]bool
+	values      map[string]any
+	missing     map[string]bool
+	keepSecrets bool
 }
 
-func NewExpander(defaults map[string]any, overrides map[string]any, builtins map[string]string) *Expander {
+func NewExpander(defaults map[string]any, overrides map[string]any, builtins map[string]string, secrets map[string]string) *Expander {
 	values := map[string]any{}
 	maps.Copy(values, defaults)
 	maps.Copy(values, overrides)
 	for key, value := range builtins {
 		values[key] = value
 	}
+	for key, value := range secrets {
+		values[secretPrefix+key] = value
+	}
 	return &Expander{values: values, missing: map[string]bool{}}
+}
+
+func ExpandSecrets(text string, secrets map[string]string) (string, error) {
+	expander := NewExpander(nil, nil, nil, secrets)
+	result := expander.String(text)
+	return result, expander.Err()
 }
 
 func (e *Expander) String(text string) string {
 	return placeholderPattern.ReplaceAllStringFunc(text, func(match string) string {
 		name := placeholderPattern.FindStringSubmatch(match)[1]
+		if e.keepSecrets && strings.HasPrefix(name, secretPrefix) {
+			if _, found := e.values[name]; !found {
+				e.missing[name] = true
+			}
+			return match
+		}
 		value, found := e.values[name]
 		if !found {
 			e.missing[name] = true
@@ -94,12 +112,15 @@ func (m *Manifest) Expand(expander *Expander) *Manifest {
 	expanded.Packages = expandResources(expander, m.Packages)
 	expanded.Assets = expandResources(expander, m.Assets)
 	expanded.Services = make([]docker.Service, len(m.Services))
+	expander.keepSecrets = true
+	defer func() { expander.keepSecrets = false }()
 	for index, service := range m.Services {
 		copied := service
 		copied.Image = expander.String(service.Image)
 		copied.Ports = expander.Strings(service.Ports)
 		copied.Volumes = expander.Strings(service.Volumes)
 		copied.Command = expander.Strings(service.Command)
+		copied.Ready = expander.Strings(service.Ready)
 		copied.Env = map[string]string{}
 		for key, value := range service.Env {
 			copied.Env[key] = expander.String(value)

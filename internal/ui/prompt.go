@@ -8,8 +8,20 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-isatty"
 )
+
+func StdinInteractive() bool {
+	return isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+}
+
+func PromptSecret(label string) (string, error) {
+	fmt.Fprintf(os.Stderr, "🔑 %s ", Bold.Render(label+":"))
+	value, err := term.ReadPassword(os.Stdin.Fd())
+	fmt.Fprintln(os.Stderr)
+	return strings.TrimSpace(string(value)), err
+}
 
 func Confirm(question string) bool {
 	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {

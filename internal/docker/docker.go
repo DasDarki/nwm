@@ -15,6 +15,8 @@ import (
 	"github.com/DasDarki/nwm/internal/ui"
 )
 
+const readyTimeout = 120 * time.Second
+
 type Container struct {
 	Name    string
 	Service string
@@ -68,10 +70,30 @@ func Up(ctx context.Context, server string, directory string, service Service, r
 			return err
 		}
 	}
-	if service.ShouldWait() {
-		return waitForPort(ctx, service, report)
+	if !service.ShouldWait() {
+		return nil
 	}
-	return nil
+	if len(service.Ready) > 0 {
+		return waitForCommand(ctx, name, service, report)
+	}
+	return waitForPort(ctx, service, report)
+}
+
+func waitForCommand(ctx context.Context, container string, service Service, report ui.Reporter) error {
+	report.Status("waiting for " + service.Name + " to become ready")
+	deadline := time.Now().Add(readyTimeout)
+	arguments := append([]string{"exec", container}, service.Ready...)
+	for time.Now().Before(deadline) {
+		if exec.CommandContext(ctx, "docker", arguments...).Run() == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return fmt.Errorf("service %q was not ready within %s (check: %s), see nwm service logs %s", service.Name, readyTimeout, strings.Join(service.Ready, " "), service.Name)
 }
 
 func Down(ctx context.Context, server string, service string) error {
@@ -163,7 +185,7 @@ func waitForPort(ctx context.Context, service Service, report ui.Reporter) error
 	}
 	address := net.JoinHostPort("127.0.0.1", port)
 	report.Status("waiting for " + service.Name + " on " + address)
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := time.Now().Add(readyTimeout)
 	for time.Now().Before(deadline) {
 		connection, err := net.DialTimeout("tcp", address, time.Second)
 		if err == nil {
@@ -176,5 +198,5 @@ func waitForPort(ctx context.Context, service Service, report ui.Reporter) error
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("service %q did not open %s within 60s", service.Name, address)
+	return fmt.Errorf("service %q did not open %s within %s", service.Name, address, readyTimeout)
 }

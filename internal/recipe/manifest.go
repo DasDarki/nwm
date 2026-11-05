@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -60,6 +59,25 @@ type File struct {
 	Template bool   `toml:"template,omitempty"`
 }
 
+type Secret struct {
+	Name   string `toml:"name"`
+	Length int    `toml:"length,omitempty"`
+	Prompt bool   `toml:"prompt,omitempty"`
+}
+
+func (s Secret) Validate() error {
+	if !variableNamePattern.MatchString(s.Name) {
+		return fmt.Errorf("secret name %q is invalid, use letters, digits and '_'", s.Name)
+	}
+	if s.Length != 0 && (s.Length < 8 || s.Length > 256) {
+		return fmt.Errorf("secret %q: length must be between 8 and 256", s.Name)
+	}
+	if s.Prompt && s.Length != 0 {
+		return fmt.Errorf("secret %q: prompt and random length cannot be combined", s.Name)
+	}
+	return nil
+}
+
 type Hook struct {
 	Run []string `toml:"run"`
 	Dir string   `toml:"dir,omitempty"`
@@ -76,15 +94,20 @@ type Manifest struct {
 	Modules   []Module         `toml:"module,omitempty"`
 	Files     []File           `toml:"file,omitempty"`
 	Services  []docker.Service `toml:"service,omitempty"`
+	Secrets   []Secret         `toml:"secret,omitempty"`
 	Hooks     []Hook           `toml:"hook,omitempty"`
 }
 
 func Load(directory string) (*Manifest, error) {
-	path := filepath.Join(directory, FileName)
-	content, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("no %s in %s", FileName, directory)
+	document, err := OpenDocument(directory)
+	if err != nil {
+		return nil, err
 	}
+	return document.Manifest, nil
+}
+
+func loadTOML(path string) (*Manifest, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +189,16 @@ func (m *Manifest) Validate(directory string) error {
 		}
 		serviceNames[service.Name] = true
 	}
+	secretNames := map[string]bool{}
+	for _, secret := range m.Secrets {
+		if err := secret.Validate(); err != nil {
+			add("%v", err)
+		}
+		if secretNames[secret.Name] {
+			add("secret %q is listed twice", secret.Name)
+		}
+		secretNames[secret.Name] = true
+	}
 	for _, hook := range m.Hooks {
 		if len(hook.Run) == 0 {
 			add("hooks need a run command")
@@ -192,39 +225,20 @@ func isURL(source string) bool {
 	return strings.HasPrefix(source, "https://") || strings.HasPrefix(source, "http://")
 }
 
-func Scaffold(name string) string {
-	return fmt.Sprintf(`[recipe]
-name = %q
-version = "0.1.0"
-description = "Local development server"
-authors = []
-keywords = []
+func ScaffoldDSL(name string) string {
+	return fmt.Sprintf(`# nwm recipe, see: nwm recipe edit / nwm recipe add --help
+recipe %s 0.1.0
+description "Local development server"
 
-[server]
-branch = "public"
-nanossharp = false
-args = []
+branch public
 
-[variables]
-port = 7777
+var port 7777
 
-[config.discover]
-name = "${server.name}"
-port = "${port}"
+config discover.name "${server.name}"
+config discover.port ${port}
 
-[config.game]
-game_mode = "sandbox"
+package sandbox enable
 
-[[package]]
-name = "sandbox"
-enable = true
-
-[[service]]
-name = "redis"
-image = "redis:7-alpine"
-ports = ["6379"]
-
-[env]
-REDIS_URL = "redis://127.0.0.1:6379"
-`, name)
+use redis
+`, QuoteWord(name))
 }

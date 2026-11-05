@@ -49,23 +49,117 @@ nwm server start dev
 | `nwm package install\|update\|list\|remove\|enable\|disable` | Manage packages from the vault |
 | `nwm assets install\|update\|list\|remove\|enable\|disable` | Manage asset packs from the vault |
 | `nwm nanossharp install\|update\|uninstall` | Manage [NanosSharp](https://nanossharp.dasdarki.de) |
-| `nwm recipe init\|validate\|apply\|upgrade\|info\|search` | Work with recipes |
+| `nwm recipe init\|edit\|add\|rm\|show\|convert\|validate` | Write recipes, interactively or from the shell |
+| `nwm recipe apply\|upgrade\|info\|search` | Use recipes |
 | `nwm recipe publish\|unpublish` | Share recipes through the registry |
 | `nwm service list\|add\|up\|down\|logs\|remove` | Manage Docker services of a server |
+| `nwm secret list\|get\|set\|rotate\|remove` | Manage a server's passwords and tokens |
 | `nwm self-update` | Update nwm itself |
 
 Commands that target a server pick it by name, by the current directory, or automatically when only one server exists.
 
 ## Recipes
 
-A recipe is a `recipe.toml` (plus any files it references) that describes a complete server setup.
-Create one with `nwm recipe init`, then use it:
+A recipe describes a complete server setup. It is a `Recipefile` (or a `recipe.toml`) plus any files it references.
 
 ```sh
-nwm server create dev --recipe ./my-recipe --var port=7790
+nwm recipe init --name @you/roleplay
+nwm recipe edit
+nwm server create dev --recipe . --var port=7790
 nwm recipe apply @dasdarki/roleplay@^1 -s dev
 nwm recipe upgrade -s dev
 ```
+
+### Writing recipes
+
+`nwm recipe edit` opens a full screen editor: every statement below is a command, Tab completes commands,
+packages and asset packs from the nanos world store, service presets, `Config.toml` keys and files.
+`undo`, `remove <kind> <name>`, `validate`, `save [toml|dsl]` and `help` are available as well.
+
+The same statements work from the shell, with shell completion:
+
+```sh
+nwm recipe add package sandbox enable
+nwm recipe add use postgres
+nwm recipe rm package sandbox
+nwm recipe show --format toml
+nwm recipe convert --to toml
+```
+
+### Recipefile
+
+```
+recipe @you/roleplay 1.0.0
+description "Roleplay development server"
+author you
+keywords roleplay postgres
+
+branch public
+nanossharp
+arg --log_level 2
+
+var port 7777
+
+config discover.name "RP ${server.name}"
+config discover.port ${port}
+config custom_settings.spawn_cars true
+
+package sandbox enable
+package roleplay-core git https://github.com/you/roleplay-core.git ref v2.1.0 enable
+package dev-tools path packages/dev-tools
+assets nanos-world
+
+module mysql linux https://example.com/mysql.so windows https://example.com/mysql.dll
+file files/NanosSharp.toml NanosSharp.toml template
+
+use postgres
+use redis port 16379
+service search getmeili/meilisearch:v1 port 7700 volume search-data:/meili_data
+
+secret steam_token prompt
+env STEAM_TOKEN ${secret.steam_token}
+hook in Packages/roleplay-core dotnet build
+```
+
+One statement per line, `#` starts a comment. Words are split at spaces, `"..."` allows escapes, `'...'` is literal.
+Unquoted values of `var` and `config` keep their type (`7777`, `true`, `[a, b]`), quoted values are strings.
+Named entries (`package x`, `service x`, `var x`, `config k`, `env K`) replace earlier ones, `arg` and `hook` append.
+
+| Statement | Alias | Effect |
+|---|---|---|
+| `recipe <name> [version]` | | Name (scoped like `@you/name` for the registry) and version |
+| `description`, `author`, `keywords` | | Metadata shown in the registry |
+| `branch public\|bleeding-edge` | | Steam branch |
+| `nanossharp [on\|off]` | | Install NanosSharp |
+| `arg <args>...` | | Server launch arguments |
+| `var <name> <default>` | | Variable used as `${name}`, overridable with `--var name=value` |
+| `config <key> <value>` | `cfg` | Value in `Config.toml`, e.g. `discover.port` |
+| `package <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>]` | `pkg` | Package from the vault (name only), git or the recipe folder. `enable` loads it |
+| `assets <name> [...]` | `asset` | Asset pack, same options |
+| `module <name> [linux <src>] [windows <src>]` | `mod` | C module copied into `Modules/`, from a URL or the recipe |
+| `file <source> <target> [template]` | | Copy a file or folder into the server, `template` expands placeholders |
+| `use <image> [as <name>] [port <host port>] [env K=V]...` | `require_service`, `requires` | Service with presets, see below |
+| `service <name> <image> [port <p>] [env K=V] [volume <v>] [ready "<check>"] [nowait] [command <args>...]` | `svc` | Docker service started with the server |
+| `secret <name> [random [length] \| prompt]` | | Value from the secret store, used as `${secret.name}` |
+| `env <KEY> <value>` | | Written to the server's `.env` and passed to the server process |
+| `hook [in <dir>] <command>...` | | Run after applying, remote recipes ask first |
+
+Built-in variables: `${server.name}`, `${server.path}`, `${os}`.
+`recipe.toml` holds the same data as TOML tables (`[recipe]`, `[server]`, `[variables]`, `[config]`, `[[package]]`,
+`[[assets]]`, `[[module]]`, `[[file]]`, `[[service]]`, `[[secret]]`, `[env]`, `[[hook]]`), see `nwm recipe show --format toml`.
+
+### Service presets
+
+`use` knows `postgres`, `mysql`, `mariadb`, `redis`, `valkey`, `mongo`, `rabbitmq`, `meilisearch` and `minio`.
+It picks a sensible image, port, data volume and readiness check, generates a password secret and writes connection
+values to `.env`, e.g. `use postgres` provides `DATABASE_URL`. `port` changes the host port, other images become plain services.
+Ports bind to `127.0.0.1` unless an IP is given. nwm waits until a service is ready before the server starts.
+
+### Secrets
+
+Secrets live per server in `~/.nwm/secrets/<server>.toml` (readable only by you), never in the recipe or the server folder.
+`random` secrets are generated on the first apply and stay stable across upgrades, `prompt` secrets are asked for
+(or passed with `--secret name=value`). Manage them with `nwm secret list|get|set|rotate|remove -s <server>`.
 
 ### Sources
 
@@ -77,86 +171,6 @@ nwm recipe upgrade -s dev
 | Local | `./my-recipe`, `file:/path/to/recipe` |
 
 Versions are git tags. Constraints: exact (`1.2.3`), `^1`, `^1.2`, `~1.2`, `>=1.0`, a branch or tag name, or nothing for the newest release.
-
-### Format
-
-```toml
-[recipe]
-name = "@you/roleplay"
-version = "1.0.0"
-description = "Roleplay development server"
-keywords = ["roleplay", "postgres"]
-
-[server]
-branch = "public"
-nanossharp = true
-args = ["--log_level", "2"]
-
-[variables]
-port = 7777
-db_password = "dev"
-
-[config.discover]
-name = "RP ${server.name}"
-port = "${port}"
-
-[config.custom_settings]
-spawn_cars = true
-
-[[package]]
-name = "sandbox"
-enable = true
-
-[[package]]
-name = "roleplay-core"
-git = "https://github.com/you/roleplay-core.git"
-ref = "v2.1.0"
-enable = true
-
-[[package]]
-name = "dev-tools"
-path = "packages/dev-tools"
-
-[[assets]]
-name = "nanos-world"
-
-[[module]]
-name = "mysql"
-linux = "https://example.com/mysql.so"
-windows = "https://example.com/mysql.dll"
-
-[[file]]
-source = "files/NanosSharp.toml"
-target = "NanosSharp.toml"
-template = true
-
-[[service]]
-name = "db"
-image = "postgres:16"
-ports = ["5432"]
-env = { POSTGRES_PASSWORD = "${db_password}" }
-volumes = ["data:/var/lib/postgresql/data"]
-
-[env]
-DATABASE_URL = "postgres://postgres:${db_password}@127.0.0.1:5432/postgres"
-
-[[hook]]
-run = ["dotnet", "build"]
-dir = "Packages/roleplay-core"
-```
-
-| Section | Effect |
-|---|---|
-| `[server]` | Steam branch, NanosSharp installation and default launch arguments |
-| `[variables]` | Defaults for `${name}` placeholders, overridable with `--var name=value`. Built-ins: `server.name`, `server.path`, `os` |
-| `[config]` | Merged into `Config.toml`. A value that is only a placeholder keeps its type |
-| `[[package]]`, `[[assets]]` | From the vault (name only), from git (`git`, `ref`, `subdir`) or from the recipe (`path`). `enable` adds them to `Config.toml` |
-| `[[module]]` | C modules copied into `Modules/`, per platform, from a URL or recipe path. Archives are extracted |
-| `[[file]]` | Files or folders copied into the server. `template = true` expands placeholders |
-| `[[service]]` | Docker containers started with the server. Ports bind to `127.0.0.1` unless an IP is given. Named volumes are managed by nwm, paths are relative to the server |
-| `[env]` | Written to the server's `.env` and passed to the server process |
-| `[[hook]]` | Commands run after applying. Hooks from remote recipes ask for confirmation unless `--yes` is given |
-
 The applied recipe, its variables, launch arguments and services are stored in the server's `nwm.toml`.
 
 ## Registry

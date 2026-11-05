@@ -51,6 +51,7 @@ func newRootCommand() *cobra.Command {
 		newNanosSharpCommand(),
 		newRecipeCommand(),
 		newServiceCommand(),
+		newSecretCommand(),
 		newSelfUpdateCommand(),
 		newVersionCommand(),
 	)

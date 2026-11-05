@@ -169,6 +169,30 @@ func mergeTables(target map[string]any, values map[string]any) {
 	}
 }
 
+func DefaultConfigKeys() map[string]any {
+	var defaults map[string]any
+	if err := toml.Unmarshal(defaultConfig, &defaults); err != nil {
+		return nil
+	}
+	flat := map[string]any{}
+	var walk func(prefix string, table map[string]any)
+	walk = func(prefix string, table map[string]any) {
+		for key, value := range table {
+			path := prefix + key
+			if nested, isTable := value.(map[string]any); isTable {
+				if len(nested) == 0 {
+					flat[path+"."] = nil
+				}
+				walk(path+".", nested)
+				continue
+			}
+			flat[path] = value
+		}
+	}
+	walk("", defaults)
+	return flat
+}
+
 func fillMissing(target map[string]any, defaults map[string]any) {
 	for key, fallback := range defaults {
 		existing, found := target[key]

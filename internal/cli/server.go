@@ -13,6 +13,7 @@ import (
 	"github.com/DasDarki/nwm/internal/home"
 	"github.com/DasDarki/nwm/internal/nanossharp"
 	"github.com/DasDarki/nwm/internal/recipe"
+	"github.com/DasDarki/nwm/internal/secrets"
 	"github.com/DasDarki/nwm/internal/server"
 	"github.com/DasDarki/nwm/internal/state"
 	"github.com/DasDarki/nwm/internal/steamcmd"
@@ -121,17 +122,17 @@ func createServer(command *cobra.Command, name string, options createOptions) er
 		return err
 	}
 	var fetched *recipe.Fetched
-	var resolved *recipe.Manifest
+	var prepared *preparedRecipe
 	target := recipe.Target{Name: name, Dir: directory}
 	if options.recipe != "" {
 		if fetched, err = fetchRecipe(options.recipe, options.recipeFlags.refresh); err != nil {
 			return err
 		}
-		if resolved, err = recipe.Resolve(fetched, target, variables); err != nil {
+		if prepared, err = prepareRecipe(fetched, target, options.recipeFlags, variables); err != nil {
 			return err
 		}
-		if !command.Flags().Changed("branch") && resolved.Server.Branch != "" {
-			options.branch = resolved.Server.Branch
+		if !command.Flags().Changed("branch") && prepared.manifest.Server.Branch != "" {
+			options.branch = prepared.manifest.Server.Branch
 		}
 		if err := validateBranch(options.branch); err != nil {
 			return err
@@ -151,7 +152,7 @@ func createServer(command *cobra.Command, name string, options createOptions) er
 	}
 
 	if fetched != nil {
-		if err := applyRecipe(fetched, target, options.recipeFlags, variables); err != nil {
+		if err := applyPrepared(fetched, prepared, target, options.recipeFlags); err != nil {
 			ui.Hint("the server is installed, fix the problem and run %s", ui.Command("nwm recipe apply "+options.recipe+" -s "+name))
 			return err
 		}
@@ -568,6 +569,9 @@ func newServerRemoveCommand() *cobra.Command {
 				}
 			}
 			if deleteFiles {
+				if err := secrets.Remove(name); err != nil {
+					ui.Warn("could not delete secrets: %v", err)
+				}
 				if err := ui.Run("Deleting "+path, func(context.Context, ui.Reporter) error {
 					return os.RemoveAll(path)
 				}); err != nil {

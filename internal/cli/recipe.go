@@ -10,6 +10,7 @@ import (
 
 	"github.com/DasDarki/nwm/internal/recipe"
 	"github.com/DasDarki/nwm/internal/registry"
+	"github.com/DasDarki/nwm/internal/secrets"
 	"github.com/DasDarki/nwm/internal/semver"
 	"github.com/DasDarki/nwm/internal/server"
 	"github.com/DasDarki/nwm/internal/ui"
@@ -18,6 +19,7 @@ import (
 
 type recipeFlags struct {
 	variables    []string
+	secrets      []string
 	skipServices bool
 	skipHooks    bool
 	assumeYes    bool
@@ -26,6 +28,7 @@ type recipeFlags struct {
 
 func (f *recipeFlags) register(command *cobra.Command) {
 	command.Flags().StringArrayVar(&f.variables, "var", nil, "set a recipe variable, e.g. --var port=7790")
+	command.Flags().StringArrayVar(&f.secrets, "secret", nil, "set a secret instead of generating or asking, e.g. --secret api_key=...")
 	command.Flags().BoolVar(&f.skipServices, "no-services", false, "do not start the recipe's services")
 	command.Flags().BoolVar(&f.skipHooks, "no-hooks", false, "do not run the recipe's hooks")
 	command.Flags().BoolVarP(&f.assumeYes, "yes", "y", false, "run hooks of remote recipes without asking")
@@ -33,15 +36,57 @@ func (f *recipeFlags) register(command *cobra.Command) {
 }
 
 func (f *recipeFlags) parsedVariables() (map[string]string, error) {
+	return parseAssignments(f.variables, "--var")
+}
+
+func parseAssignments(entries []string, flag string) (map[string]string, error) {
 	values := map[string]string{}
-	for _, entry := range f.variables {
+	for _, entry := range entries {
 		key, value, found := strings.Cut(entry, "=")
 		if !found || strings.TrimSpace(key) == "" {
-			return nil, fmt.Errorf("--var expects name=value, got %q", entry)
+			return nil, fmt.Errorf("%s expects name=value, got %q", flag, entry)
 		}
 		values[strings.TrimSpace(key)] = value
 	}
 	return values, nil
+}
+
+type preparedRecipe struct {
+	manifest  *recipe.Manifest
+	variables map[string]string
+	secrets   map[string]string
+}
+
+func prepareRecipe(fetched *recipe.Fetched, target recipe.Target, flags recipeFlags, variables map[string]string) (*preparedRecipe, error) {
+	provided, err := parseAssignments(flags.secrets, "--secret")
+	if err != nil {
+		return nil, err
+	}
+	store, err := secrets.Open(target.Name)
+	if err != nil {
+		return nil, err
+	}
+	var prompt recipe.PromptFunc
+	if ui.StdinInteractive() {
+		prompt = func(name string) (string, error) {
+			return ui.PromptSecret("Value for secret " + name)
+		}
+	}
+	created, err := recipe.EnsureSecrets(fetched.Manifest, store, provided, prompt)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.Save(); err != nil {
+		return nil, err
+	}
+	if len(created) > 0 {
+		ui.Step("🔑", "Stored %d new secret(s) for %s: %s", len(created), target.Name, strings.Join(created, ", "))
+	}
+	manifest, err := recipe.Resolve(fetched, target, variables, store.Values())
+	if err != nil {
+		return nil, err
+	}
+	return &preparedRecipe{manifest: manifest, variables: variables, secrets: store.Values()}, nil
 }
 
 func newRecipeCommand() *cobra.Command {
@@ -55,6 +100,11 @@ func newRecipeCommand() *cobra.Command {
 	}
 	command.AddCommand(
 		newRecipeInitCommand(),
+		newRecipeEditCommand(),
+		newRecipeAddCommand(),
+		newRecipeRemoveCommand(),
+		newRecipeShowCommand(),
+		newRecipeConvertCommand(),
 		newRecipeValidateCommand(),
 		newRecipeApplyCommand(),
 		newRecipeUpgradeCommand(),
@@ -85,10 +135,15 @@ func fetchRecipe(spec string, refresh bool) (*recipe.Fetched, error) {
 }
 
 func applyRecipe(fetched *recipe.Fetched, target recipe.Target, flags recipeFlags, variables map[string]string) error {
-	manifest, err := recipe.Resolve(fetched, target, variables)
+	prepared, err := prepareRecipe(fetched, target, flags, variables)
 	if err != nil {
 		return err
 	}
+	return applyPrepared(fetched, prepared, target, flags)
+}
+
+func applyPrepared(fetched *recipe.Fetched, prepared *preparedRecipe, target recipe.Target, flags recipeFlags) error {
+	manifest := prepared.manifest
 	if len(manifest.Hooks) > 0 && !flags.skipHooks && fetched.Remote && !flags.assumeYes {
 		ui.Warn("this recipe runs commands on your machine:")
 		for _, hook := range manifest.Hooks {
@@ -100,7 +155,8 @@ func applyRecipe(fetched *recipe.Fetched, target recipe.Target, flags recipeFlag
 		}
 	}
 	return recipe.Apply(fetched, manifest, target, recipe.ApplyOptions{
-		Variables:    variables,
+		Variables:    prepared.variables,
+		Secrets:      prepared.secrets,
 		SkipServices: flags.skipServices,
 		SkipHooks:    flags.skipHooks,
 	})
@@ -108,9 +164,10 @@ func applyRecipe(fetched *recipe.Fetched, target recipe.Target, flags recipeFlag
 
 func newRecipeInitCommand() *cobra.Command {
 	var name string
+	var useTOML bool
 	command := &cobra.Command{
 		Use:   "init [directory]",
-		Short: "Create a recipe.toml to start from",
+		Short: "Create a Recipefile to start from",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, arguments []string) error {
 			directory := "."
@@ -121,25 +178,24 @@ func newRecipeInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := filepath.Join(directory, recipe.FileName)
-			if _, err := os.Stat(path); err == nil {
-				return fmt.Errorf("%s already exists", path)
-			}
 			if name == "" {
 				name = strings.ToLower(filepath.Base(directory))
 			}
-			if err := os.MkdirAll(directory, 0o755); err != nil {
-				return err
+			format := recipe.FormatDSL
+			if useTOML {
+				format = recipe.FormatTOML
 			}
-			if err := os.WriteFile(path, []byte(recipe.Scaffold(name)), 0o644); err != nil {
+			path, err := writeNewRecipe(directory, name, format)
+			if err != nil {
 				return err
 			}
 			ui.Success("Created %s", path)
-			ui.Hint("try it with %s", ui.Command("nwm server create test --recipe "+directory))
+			ui.Hint("edit it with %s, try it with %s", ui.Command("nwm recipe edit"), ui.Command("nwm server create test --recipe "+directory))
 			return nil
 		},
 	}
 	command.Flags().StringVar(&name, "name", "", "recipe name, e.g. @you/my-recipe")
+	command.Flags().BoolVar(&useTOML, "toml", false, "write recipe.toml instead of a Recipefile")
 	return command
 }
 
@@ -153,14 +209,15 @@ func newRecipeValidateCommand() *cobra.Command {
 			if len(arguments) > 0 {
 				directory = arguments[0]
 			}
-			manifest, err := recipe.Load(directory)
+			document, err := openRecipeDocument(directory)
 			if err != nil {
 				return err
 			}
-			if err := manifest.Validate(directory); err != nil {
+			manifest := document.Manifest
+			if err := manifest.Validate(document.Dir); err != nil {
 				return err
 			}
-			ui.Success("%s is valid", manifest.Recipe.Name)
+			ui.Success("%s is valid %s", manifest.Recipe.Name, ui.Muted.Render("("+filepath.Base(document.Path())+")"))
 			for _, line := range manifest.Summary() {
 				ui.Detail("contains", line)
 			}

@@ -27,6 +27,7 @@ type Target struct {
 
 type ApplyOptions struct {
 	Variables    map[string]string
+	Secrets      map[string]string
 	SkipServices bool
 	SkipHooks    bool
 }
@@ -39,12 +40,16 @@ func Builtins(target Target) map[string]string {
 	}
 }
 
-func Resolve(fetched *Fetched, target Target, overrides map[string]string) (*Manifest, error) {
+func parseOverrides(overrides map[string]string) map[string]any {
 	parsed := map[string]any{}
 	for key, raw := range overrides {
 		parsed[key] = server.ParseValue(raw)
 	}
-	expander := NewExpander(fetched.Manifest.Variables, parsed, Builtins(target))
+	return parsed
+}
+
+func Resolve(fetched *Fetched, target Target, overrides map[string]string, secretValues map[string]string) (*Manifest, error) {
+	expander := NewExpander(fetched.Manifest.Variables, parseOverrides(overrides), Builtins(target), secretValues)
 	expanded := fetched.Manifest.Expand(expander)
 	return expanded, expander.Err()
 }
@@ -71,7 +76,7 @@ func Apply(fetched *Fetched, manifest *Manifest, target Target, options ApplyOpt
 			return installModules(ctx, fetched.Dir, target.Dir, manifest.Modules, report)
 		}},
 		{"Copying files", len(manifest.Files) == 0, func(_ context.Context, report ui.Reporter) error {
-			return copyFiles(fetched.Dir, target, manifest.Files, options.Variables, fetched.Manifest.Variables, report)
+			return copyFiles(fetched.Dir, target, manifest.Files, options, fetched.Manifest.Variables, report)
 		}},
 		{"Writing configuration", false, func(context.Context, ui.Reporter) error {
 			return writeConfiguration(target.Dir, manifest)
@@ -87,7 +92,11 @@ func Apply(fetched *Fetched, manifest *Manifest, target Target, options ApplyOpt
 				return err
 			}
 			for _, service := range manifest.Services {
-				if err := docker.Up(ctx, target.Name, target.Dir, service, report); err != nil {
+				resolved, err := ResolveServiceSecrets(service, options.Secrets)
+				if err != nil {
+					return err
+				}
+				if err := docker.Up(ctx, target.Name, target.Dir, resolved, report); err != nil {
 					return err
 				}
 			}
@@ -211,11 +220,8 @@ func installModules(ctx context.Context, recipeDir string, serverDir string, mod
 	return nil
 }
 
-func copyFiles(recipeDir string, target Target, files []File, overrides map[string]string, defaults map[string]any, report ui.Reporter) error {
-	parsed := map[string]any{}
-	for key, raw := range overrides {
-		parsed[key] = server.ParseValue(raw)
-	}
+func copyFiles(recipeDir string, target Target, files []File, options ApplyOptions, defaults map[string]any, report ui.Reporter) error {
+	parsed := parseOverrides(options.Variables)
 	for _, file := range files {
 		source, err := fsutil.SafeJoin(recipeDir, file.Source)
 		if err != nil {
@@ -236,7 +242,7 @@ func copyFiles(recipeDir string, target Target, files []File, overrides map[stri
 		if err != nil {
 			return err
 		}
-		expander := NewExpander(defaults, parsed, Builtins(target))
+		expander := NewExpander(defaults, parsed, Builtins(target), options.Secrets)
 		rendered := expander.String(string(content))
 		if err := expander.Err(); err != nil {
 			return fmt.Errorf("%s: %w", file.Source, err)
@@ -333,6 +339,33 @@ func runHooks(target Target, recipeDir string, hooks []Hook) error {
 	return nil
 }
 
+func ResolveServiceSecrets(service docker.Service, secretValues map[string]string) (docker.Service, error) {
+	resolved := service
+	resolved.Ready = make([]string, len(service.Ready))
+	for index, argument := range service.Ready {
+		expanded, err := ExpandSecrets(argument, secretValues)
+		if err != nil {
+			return service, fmt.Errorf("service %s: %w", service.Name, err)
+		}
+		resolved.Ready[index] = expanded
+	}
+	if len(service.Ready) == 0 {
+		resolved.Ready = nil
+	}
+	if len(service.Env) == 0 {
+		return resolved, nil
+	}
+	resolved.Env = make(map[string]string, len(service.Env))
+	for key, value := range service.Env {
+		expanded, err := ExpandSecrets(value, secretValues)
+		if err != nil {
+			return service, fmt.Errorf("service %s: %w", service.Name, err)
+		}
+		resolved.Env[key] = expanded
+	}
+	return resolved, nil
+}
+
 func (m *Manifest) Summary() []string {
 	var lines []string
 	add := func(label string, count int) {
@@ -345,6 +378,7 @@ func (m *Manifest) Summary() []string {
 	add("C modules", len(m.Modules))
 	add("files", len(m.Files))
 	add("services", len(m.Services))
+	add("secrets", len(m.Secrets))
 	add("env variables", len(m.Env))
 	add("hooks", len(m.Hooks))
 	return lines

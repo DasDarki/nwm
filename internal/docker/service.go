@@ -20,6 +20,7 @@ type Service struct {
 	Env     map[string]string `toml:"env,omitempty" json:"env,omitempty"`
 	Volumes []string          `toml:"volumes,omitempty" json:"volumes,omitempty"`
 	Command []string          `toml:"command,omitempty" json:"command,omitempty"`
+	Ready   []string          `toml:"ready,omitempty" json:"ready,omitempty"`
 	Wait    *bool             `toml:"wait,omitempty" json:"wait,omitempty"`
 }
 
@@ -44,7 +45,7 @@ func (s Service) Validate() error {
 }
 
 func (s Service) ShouldWait() bool {
-	return (s.Wait == nil || *s.Wait) && len(s.Ports) > 0
+	return (s.Wait == nil || *s.Wait) && (len(s.Ports) > 0 || len(s.Ready) > 0)
 }
 
 func (s Service) hash() string {
