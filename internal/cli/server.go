@@ -86,7 +86,7 @@ func newServerCreateCommand() *cobra.Command {
 	flags.IntVar(&options.maxPlayers, "max-players", 0, "maximum players")
 	flags.StringVar(&options.gameMode, "game-mode", "", "game mode package")
 	flags.StringVar(&options.mapName, "map", "", "map package")
-	flags.StringVarP(&options.recipe, "recipe", "r", "", "set the server up from a recipe (registry name, github:owner/repo, git URL or path)")
+	flags.StringVarP(&options.recipe, "recipe", "r", "", "set the server up from a recipe (registry name, github:owner/repo, git URL, gist:, file URL or path)")
 	options.recipeFlags.register(command)
 	command.RegisterFlagCompletionFunc("branch", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{steamcmd.BranchPublic, steamcmd.BranchBleedingEdge}, cobra.ShellCompDirectiveNoFileComp

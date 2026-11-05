@@ -12,6 +12,7 @@ type ServicePreset struct {
 	Description   string
 	ContainerPort string
 	DataPath      string
+	Command       []string
 	Ready         []string
 	Env           map[string]string
 	ServerEnv     map[string]string
@@ -63,6 +64,7 @@ var servicePresets = map[string]ServicePreset{
 	},
 	"minio": {
 		Image: "minio/minio", Description: "S3 compatible object storage", ContainerPort: "9000", DataPath: "/data",
+		Command:   []string{"server", "/data"},
 		Env:       map[string]string{"MINIO_ROOT_USER": "nanos", "MINIO_ROOT_PASSWORD": "{password}"},
 		ServerEnv: map[string]string{"S3_ENDPOINT": "http://127.0.0.1:{port}"},
 	},
@@ -102,7 +104,7 @@ func expandRequirement(image string, name string, hostPort string, extraEnv map[
 	if name == "" {
 		name = strings.ToLower(base)
 	}
-	service := docker.Service{Name: name, Image: image, Env: map[string]string{}, Ready: preset.Ready}
+	service := docker.Service{Name: name, Image: image, Env: map[string]string{}, Ready: preset.Ready, Command: preset.Command}
 	serverEnv := map[string]string{}
 	var secret *Secret
 	secretName := strings.ReplaceAll(name, "-", "_") + "_password"

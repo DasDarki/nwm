@@ -95,8 +95,9 @@ func newRecipeCommand() *cobra.Command {
 		Aliases: []string{"recipes", "r"},
 		Short:   "📜 Create, share and apply server recipes",
 		Long: "Recipes describe a complete server setup: Config.toml, packages, assets, C modules,\n" +
-			"files, .env values, Docker services and hooks. They live in git repositories and\n" +
-			"can be published to the registry at github.com/" + registry.Repository + ".",
+			"files, .env values, Docker services and hooks. They are a Recipefile or recipe.toml\n" +
+			"in a folder, a git repository, a URL or a gist, and can be published to the\n" +
+			"registry at github.com/" + registry.Repository + ". Docs: https://nwm.dasdarki.de",
 	}
 	command.AddCommand(
 		newRecipeInitCommand(),

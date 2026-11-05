@@ -64,6 +64,13 @@ func TestParseValue(t *testing.T) {
 	if list, ok := ParseValue(`["a", "b"]`).([]any); !ok || len(list) != 2 {
 		t.Errorf("expected list, got %v", list)
 	}
+	loose, ok := ParseValue(`[nanos-world, cyberpunk, 3, true]`).([]any)
+	if !ok || len(loose) != 4 || loose[0] != "nanos-world" || loose[2] != int64(3) || loose[3] != true {
+		t.Errorf("expected loose list, got %#v", loose)
+	}
+	if value := ParseValue(`[unbalanced`); value != "[unbalanced" {
+		t.Errorf("broken lists should stay strings, got %#v", value)
+	}
 }
 
 func TestEnableCModuleUsesPackageList(t *testing.T) {

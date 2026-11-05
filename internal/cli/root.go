@@ -26,7 +26,7 @@ func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "nwm",
 		Short:         "🌍 nanos world manager",
-		Long:          banner() + "\n\nCreate, update and run nanos world servers set them up from recipes and manage packages,\nassets, NanosSharp and Docker services.",
+		Long:          banner() + "\n\nCreate, update and run nanos world servers, set them up from recipes and manage packages,\nassets, NanosSharp and Docker services.",
 		Version:       buildinfo.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

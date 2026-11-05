@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -221,7 +222,41 @@ func ParseValue(raw string) any {
 	if err := toml.Unmarshal([]byte("value = "+raw), &parsed); err == nil {
 		return parsed["value"]
 	}
+	if list, ok := parseLooseList(raw); ok {
+		return list
+	}
 	return raw
+}
+
+func parseLooseList(raw string) ([]any, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "[") || !strings.HasSuffix(trimmed, "]") {
+		return nil, false
+	}
+	inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	if strings.ContainsAny(inner, "[]{}") {
+		return nil, false
+	}
+	list := []any{}
+	if inner == "" {
+		return list, true
+	}
+	for _, element := range strings.Split(inner, ",") {
+		element = strings.TrimSpace(element)
+		if element == "" {
+			return nil, false
+		}
+		if unquoted, err := strconv.Unquote(element); err == nil {
+			list = append(list, unquoted)
+			continue
+		}
+		if len(element) >= 2 && element[0] == '\'' && element[len(element)-1] == '\'' {
+			list = append(list, element[1:len(element)-1])
+			continue
+		}
+		list = append(list, ParseValue(element))
+	}
+	return list, true
 }
 
 func FormatValue(value any) string {

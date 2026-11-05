@@ -34,6 +34,12 @@ func Fetch(ctx context.Context, source Source, refresh bool, report ui.Reporter)
 			return nil, err
 		}
 		entry, err := index.Lookup(source.Name)
+		if err != nil && !refresh {
+			report.Status("refreshing the registry index")
+			if index, refreshErr := registry.Load(ctx, true); refreshErr == nil {
+				entry, err = index.Lookup(source.Name)
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
