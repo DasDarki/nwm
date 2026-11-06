@@ -166,7 +166,7 @@ func (d *Document) Save() error {
 
 func (d *Document) Convert(format Format) error {
 	if format == d.Format {
-		return nil
+		return d.Save()
 	}
 	previous := d.Path()
 	d.FileName = convertedFileName(d.FileName, format)
