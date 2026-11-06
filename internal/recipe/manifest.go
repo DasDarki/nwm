@@ -41,7 +41,17 @@ type Resource struct {
 	Subdir string `toml:"subdir,omitempty"`
 	Path   string `toml:"path,omitempty"`
 	Enable bool   `toml:"enable,omitempty"`
+	Build  string `toml:"build,omitempty"`
+	Watch  string `toml:"watch,omitempty"`
+	Output string `toml:"output,omitempty"`
+	Local  string `toml:"local,omitempty"`
+	Reload string `toml:"reload,omitempty"`
 }
+
+const (
+	ReloadHot  = "hot"
+	ReloadFull = "full"
+)
 
 func (r Resource) FromVault() bool {
 	return r.Git == "" && r.Path == ""
@@ -85,8 +95,8 @@ type Hook struct {
 }
 
 type Manifest struct {
-	Recipe    Meta             `toml:"recipe"`
-	Server    ServerSection    `toml:"server"`
+	Recipe    Meta             `toml:"recipe,omitempty"`
+	Server    ServerSection    `toml:"server,omitempty"`
 	Variables map[string]any   `toml:"variables,omitempty"`
 	Config    map[string]any   `toml:"config,omitempty"`
 	Env       map[string]any   `toml:"env,omitempty"`
@@ -97,6 +107,8 @@ type Manifest struct {
 	Services  []docker.Service `toml:"service,omitempty"`
 	Secrets   []Secret         `toml:"secret,omitempty"`
 	Hooks     []Hook           `toml:"hook,omitempty"`
+	Tools     []string         `toml:"tools,omitempty"`
+	Dev       *Manifest        `toml:"dev,omitempty"`
 }
 
 func Load(directory string) (*Manifest, error) {
@@ -203,6 +215,13 @@ func (m *Manifest) Validate(directory string) error {
 	for _, hook := range m.Hooks {
 		if len(hook.Run) == 0 {
 			add("hooks need a run command")
+		}
+	}
+	if m.Dev != nil {
+		overlay := *m.Dev
+		overlay.Recipe = m.Recipe
+		if err := overlay.Validate(directory); err != nil {
+			problems = append(problems, "dev: "+strings.TrimPrefix(err.Error(), "invalid recipe:\n  - "))
 		}
 	}
 	if len(problems) > 0 {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DasDarki/nwm/internal/fsutil"
 	"github.com/DasDarki/nwm/internal/home"
 	"github.com/DasDarki/nwm/internal/nanossharp"
 	"github.com/DasDarki/nwm/internal/recipe"
@@ -43,6 +44,8 @@ func newServerCommand() *cobra.Command {
 		newServerRemoveCommand(),
 		newServerConfigCommand(),
 		newServerTrustCommand(),
+		newServerCmdCommand(),
+		newServerAttachCommand(),
 	)
 	return command
 }
@@ -604,7 +607,7 @@ func newServerRemoveCommand() *cobra.Command {
 					ui.Warn("could not delete secrets: %v", err)
 				}
 				if err := ui.Run("Deleting "+path, func(context.Context, ui.Reporter) error {
-					return os.RemoveAll(path)
+					return fsutil.RemoveAll(path)
 				}); err != nil {
 					return err
 				}

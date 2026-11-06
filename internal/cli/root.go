@@ -34,7 +34,7 @@ func newRootCommand() *cobra.Command {
 			updater.CleanupPrevious()
 		},
 		PersistentPostRun: func(command *cobra.Command, _ []string) {
-			if command.Name() == "self-update" || !ui.Interactive() {
+			if command.Name() == "self-update" || command.Hidden || !ui.Interactive() {
 				return
 			}
 			if latest := updater.PendingNotice(context.Background()); latest != "" {
@@ -51,9 +51,11 @@ func newRootCommand() *cobra.Command {
 		newNanosSharpCommand(),
 		newRecipeCommand(),
 		newServiceCommand(),
+		newDevCommand(),
 		newSecretCommand(),
 		newSelfUpdateCommand(),
 		newVersionCommand(),
+		newSuperviseCommand(),
 	)
 	return root
 }

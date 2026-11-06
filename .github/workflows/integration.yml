@@ -1,0 +1,27 @@
+name: integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "internal/**"
+      - "go.mod"
+      - ".github/workflows/integration.yml"
+  workflow_dispatch:
+
+jobs:
+  dev:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - if: runner.os == 'Linux'
+        run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install -y lib32gcc-s1
+      - run: go test -tags integration -v -timeout 25m ./internal/integration/

@@ -38,6 +38,11 @@ func TestCompleter(t *testing.T) {
 		{"branch ", 7, "bleeding-edge"},
 		{"secret token ", 13, "prompt"},
 		{"svc db ", 7, "postgres:17"},
+		{"dev pa", 4, "package"},
+		{"dev package san", 12, "sandbox"},
+		{"package x path . reload ", 24, "full"},
+		{"package x ", 10, "watch"},
+		{"tool neb", 5, "nebra"},
 	}
 	for _, testCase := range cases {
 		start, suggestions := completer.Complete(testCase.line)

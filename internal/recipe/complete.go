@@ -72,6 +72,18 @@ func (c *Completer) candidates(previous []token) []Suggestion {
 		return c.keywords()
 	}
 	keyword := previous[0].Text
+	if keyword == "dev" {
+		if len(previous) == 1 {
+			var result []Suggestion
+			for _, suggestion := range c.keywords() {
+				if !slices.Contains(devForbidden, suggestion.Text) && !isEditorCommand(suggestion.Text) {
+					result = append(result, suggestion)
+				}
+			}
+			return result
+		}
+		return c.candidates(previous[1:])
+	}
 	position := len(previous)
 	last := previous[len(previous)-1].Text
 	if c.Editor {
@@ -110,10 +122,16 @@ func (c *Completer) candidates(previous []token) []Suggestion {
 			return c.storeItems(statement.Keyword == "assets")
 		}
 		switch last {
-		case "path", "subdir":
+		case "path", "subdir", "local", "output":
 			return c.files(true)
 		case "git", "ref":
 			return nil
+		case "build":
+			return []Suggestion{{Text: "nebra build", Detail: "detected automatically when the package has a nebra.toml"}}
+		case "watch":
+			return []Suggestion{{Text: "nebra watch", Detail: "detected automatically when the package has a nebra.toml"}}
+		case "reload":
+			return []Suggestion{{Text: ReloadHot, Detail: "package hotreload, keeps the Lua state (default)"}, {Text: ReloadFull, Detail: "package reload, starts the package fresh"}}
 		}
 		return unusedOptions(statement.Options, used)
 	case "use":
@@ -147,6 +165,12 @@ func (c *Completer) candidates(previous []token) []Suggestion {
 			}
 		}
 		return nil
+	case "tool":
+		var tools []Suggestion
+		for _, tool := range KnownTools() {
+			tools = append(tools, Suggestion{Text: tool, Detail: toolHints[tool]})
+		}
+		return tools
 	case "branch", "nanossharp":
 		if position == 1 {
 			return plain(statement.Options)
@@ -180,6 +204,15 @@ func (c *Completer) candidates(previous []token) []Suggestion {
 		return nil
 	}
 	return nil
+}
+
+func isEditorCommand(text string) bool {
+	for _, command := range EditorCommands {
+		if command.Name == text {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Completer) keywords() []Suggestion {

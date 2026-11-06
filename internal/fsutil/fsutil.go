@@ -86,7 +86,7 @@ func Copy(source string, target string) error {
 
 func ReplaceDir(staged string, target string) error {
 	backup := target + ".nwm-old"
-	os.RemoveAll(backup)
+	RemoveAll(backup)
 	if Exists(target) {
 		if err := os.Rename(target, backup); err != nil {
 			return err
@@ -96,7 +96,7 @@ func ReplaceDir(staged string, target string) error {
 		os.Rename(backup, target)
 		return err
 	}
-	return os.RemoveAll(backup)
+	return RemoveAll(backup)
 }
 
 func SkipGit(relative string) bool {

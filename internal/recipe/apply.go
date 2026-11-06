@@ -18,6 +18,7 @@ import (
 	"github.com/DasDarki/nwm/internal/fsutil"
 	"github.com/DasDarki/nwm/internal/home"
 	"github.com/DasDarki/nwm/internal/nanossharp"
+	"github.com/DasDarki/nwm/internal/process"
 	"github.com/DasDarki/nwm/internal/server"
 	"github.com/DasDarki/nwm/internal/ui"
 )
@@ -32,6 +33,12 @@ type ApplyOptions struct {
 	Secrets      map[string]string
 	SkipServices bool
 	SkipHooks    bool
+	Dev          bool
+	ConfirmBuild func(name string, command []string) bool
+}
+
+type Result struct {
+	Mounts []*Mount
 }
 
 func Builtins(target Target) map[string]string {
@@ -56,24 +63,34 @@ func Resolve(fetched *Fetched, target Target, overrides map[string]string, secre
 	return expanded, expander.Err()
 }
 
-func Apply(fetched *Fetched, manifest *Manifest, target Target, options ApplyOptions) error {
+func Apply(fetched *Fetched, manifest *Manifest, target Target, options ApplyOptions) (*Result, error) {
+	result := &Result{}
+	place := func(kind server.Kind, resources []Resource) ui.Task {
+		return func(ctx context.Context, report ui.Reporter) error {
+			mounts, err := PlaceResources(ctx, fetched.Dir, target.Dir, kind, resources, options, report)
+			result.Mounts = append(result.Mounts, mounts...)
+			return err
+		}
+	}
 	steps := []struct {
 		title string
 		skip  bool
 		run   ui.Task
 	}{
-		{"Installing vault packages", !hasVault(manifest.Packages), func(ctx context.Context, report ui.Reporter) error {
-			return server.Vault(ctx, target.Dir, "install", server.PackageKind, vaultNames(manifest.Packages), report)
+		{"Checking tools", len(manifest.Tools) == 0, func(context.Context, ui.Reporter) error {
+			if missing := MissingTools(manifest.Tools); len(missing) > 0 {
+				return MissingToolsError(missing)
+			}
+			return nil
 		}},
-		{"Installing vault asset packs", !hasVault(manifest.Assets), func(ctx context.Context, report ui.Reporter) error {
-			return server.Vault(ctx, target.Dir, "install", server.AssetKind, vaultNames(manifest.Assets), report)
+		{"Installing vault packages", len(vaultNames(manifest.Packages, fetched.Dir, options.Dev)) == 0, func(ctx context.Context, report ui.Reporter) error {
+			return server.Vault(ctx, target.Dir, "install", server.PackageKind, vaultNames(manifest.Packages, fetched.Dir, options.Dev), report)
 		}},
-		{"Installing recipe packages", !hasLocal(manifest.Packages), func(ctx context.Context, report ui.Reporter) error {
-			return placeResources(ctx, fetched.Dir, target.Dir, server.PackageKind, manifest.Packages, report)
+		{"Installing vault asset packs", len(vaultNames(manifest.Assets, fetched.Dir, options.Dev)) == 0, func(ctx context.Context, report ui.Reporter) error {
+			return server.Vault(ctx, target.Dir, "install", server.AssetKind, vaultNames(manifest.Assets, fetched.Dir, options.Dev), report)
 		}},
-		{"Installing recipe asset packs", !hasLocal(manifest.Assets), func(ctx context.Context, report ui.Reporter) error {
-			return placeResources(ctx, fetched.Dir, target.Dir, server.AssetKind, manifest.Assets, report)
-		}},
+		{"Installing recipe packages", !hasLocal(manifest.Packages, fetched.Dir, options.Dev), place(server.PackageKind, manifest.Packages)},
+		{"Installing recipe asset packs", !hasLocal(manifest.Assets, fetched.Dir, options.Dev), place(server.AssetKind, manifest.Assets)},
 		{"Installing C modules", len(manifest.Modules) == 0, func(ctx context.Context, report ui.Reporter) error {
 			return installModules(ctx, fetched.Dir, target.Dir, manifest.Modules, report)
 		}},
@@ -110,72 +127,136 @@ func Apply(fetched *Fetched, manifest *Manifest, target Target, options ApplyOpt
 			continue
 		}
 		if err := ui.Run(step.title, step.run); err != nil {
-			return err
+			return result, err
 		}
 	}
 	if options.SkipHooks {
-		return nil
+		return result, nil
 	}
-	return runHooks(target, fetched.Dir, manifest.Hooks)
+	return result, runHooks(target, fetched.Dir, manifest.Hooks)
 }
 
-func hasVault(resources []Resource) bool {
-	return len(vaultNames(resources)) > 0
+func localRoot(resource Resource, recipeDir string, dev bool) (string, bool) {
+	if dev && resource.Local != "" {
+		root := resource.Local
+		if !filepath.IsAbs(root) {
+			root = filepath.Join(recipeDir, root)
+		}
+		if isDirectory(root) {
+			return root, true
+		}
+	}
+	if resource.Path != "" {
+		root, err := fsutil.SafeJoin(recipeDir, resource.Path)
+		if err == nil {
+			return root, true
+		}
+	}
+	return "", false
 }
 
-func hasLocal(resources []Resource) bool {
-	return len(resources) > len(vaultNames(resources))
+func hasLocal(resources []Resource, recipeDir string, dev bool) bool {
+	for _, resource := range resources {
+		if _, local := localRoot(resource, recipeDir, dev); local || resource.Git != "" {
+			return true
+		}
+	}
+	return false
 }
 
-func vaultNames(resources []Resource) []string {
+func vaultNames(resources []Resource, recipeDir string, dev bool) []string {
 	var names []string
 	for _, resource := range resources {
-		if resource.FromVault() {
+		if _, local := localRoot(resource, recipeDir, dev); resource.FromVault() && !local {
 			names = append(names, resource.Name)
 		}
 	}
 	return names
 }
 
-func placeResources(ctx context.Context, recipeDir string, serverDir string, kind server.Kind, resources []Resource, report ui.Reporter) error {
+func PlaceResources(ctx context.Context, recipeDir string, serverDir string, kind server.Kind, resources []Resource, options ApplyOptions, report ui.Reporter) ([]*Mount, error) {
 	parent := filepath.Join(serverDir, kind.Directory)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
+		return nil, err
+	}
+	var mounts []*Mount
+	var localRoots []string
+	for _, resource := range resources {
+		if root, local := localRoot(resource, recipeDir, options.Dev); local {
+			localRoots = append(localRoots, root)
+		}
 	}
 	for _, resource := range resources {
-		if resource.FromVault() {
+		root, local := localRoot(resource, recipeDir, options.Dev)
+		if !local && resource.Git == "" {
 			continue
 		}
-		target := filepath.Join(parent, resource.Name)
-		if resource.Git != "" {
-			report.Status("cloning " + resource.Name)
-			if err := CloneInto(ctx, resource.Git, resource.Ref, resource.Subdir, target, report); err != nil {
-				return fmt.Errorf("%s %s: %w", kind.Singular, resource.Name, err)
+		var nested []string
+		for _, other := range localRoots {
+			if other != root && within(root, other) {
+				nested = append(nested, other)
 			}
-		} else {
-			report.Status("copying " + resource.Name)
-			source, err := fsutil.SafeJoin(recipeDir, resource.Path)
-			if err != nil {
-				return err
-			}
-			staged, err := os.MkdirTemp(parent, ".nwm-copy-")
-			if err != nil {
-				return err
-			}
-			if err := fsutil.CopyDir(source, staged, fsutil.SkipGit); err != nil {
-				os.RemoveAll(staged)
-				return err
-			}
-			if err := fsutil.ReplaceDir(staged, target); err != nil {
-				os.RemoveAll(staged)
-				return err
-			}
+		}
+		mount, err := placeResource(ctx, resource, kind, root, local, nested, parent, options, report)
+		if err != nil {
+			return mounts, fmt.Errorf("%s %s: %w", kind.Singular, resource.Name, err)
 		}
 		if _, err := server.FindResource(serverDir, kind, resource.Name); err != nil {
-			return fmt.Errorf("%s %s has no %s", kind.Singular, resource.Name, kind.Manifest)
+			return mounts, fmt.Errorf("%s %s has no %s", kind.Singular, resource.Name, kind.Manifest)
+		}
+		if local && options.Dev {
+			mounts = append(mounts, mount)
 		}
 	}
-	return nil
+	return mounts, nil
+}
+
+func placeResource(ctx context.Context, resource Resource, kind server.Kind, root string, local bool, nested []string, parent string, options ApplyOptions, report ui.Reporter) (*Mount, error) {
+	if !local {
+		report.Status("cloning " + resource.Name)
+		checkout, cleanup, err := cloneToTemp(ctx, resource.Git, resource.Ref, parent, report)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		if root, err = fsutil.SafeJoin(checkout, resource.Subdir); err != nil {
+			return nil, err
+		}
+	}
+	plan, err := PlanBuild(resource, root)
+	if err != nil {
+		return nil, err
+	}
+	for _, other := range nested {
+		plan.Exclude = appendTopLevel(plan.Exclude, plan.Root, other)
+	}
+	if entries, err := os.ReadDir(plan.Root); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() && isRecipeDocument(entry.Name()) {
+				plan.Exclude = append(plan.Exclude, entry.Name())
+			}
+		}
+	}
+	if plan.NeedsBuild() {
+		if err := RunBuild(ctx, resource.Name, plan, options, report); err != nil {
+			return nil, err
+		}
+	}
+	report.Status("installing " + resource.Name)
+	return Assemble(resource.Name, kind, plan, filepath.Join(parent, resource.Name), local && options.Dev)
+}
+
+func RunBuild(ctx context.Context, name string, plan *BuildPlan, options ApplyOptions, report ui.Reporter) error {
+	if _, err := exec.LookPath(plan.Build[0]); err != nil {
+		return MissingToolsError([]string{plan.Build[0]})
+	}
+	if options.ConfirmBuild != nil && !options.ConfirmBuild(name, plan.Build) {
+		return fmt.Errorf("building %s needs %q, allow builds of remote recipes with --yes", name, strings.Join(plan.Build, " "))
+	}
+	report.Status("building " + name + ": " + strings.Join(plan.Build, " "))
+	command := exec.CommandContext(ctx, plan.Build[0], plan.Build[1:]...)
+	command.Dir = plan.Root
+	return process.Stream(command, func(line string) { report.Status(name + ": " + line) })
 }
 
 func installModules(ctx context.Context, recipeDir string, serverDir string, modules []Module, report ui.Reporter) error {
@@ -218,7 +299,7 @@ func installModule(ctx context.Context, recipeDir string, parent string, module 
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(staged)
+	defer fsutil.RemoveAll(staged)
 	switch {
 	case strings.HasSuffix(local, ".zip"):
 		err = download.ExtractZip(local, staged)

@@ -113,7 +113,7 @@ func fetchGit(ctx context.Context, fetched *Fetched, report ui.Reporter) error {
 	checkout := filepath.Join(home.CacheDir(), "recipes", source.cacheKey(), sanitize(label))
 	isTag := reference != "" && containsTag(tags, reference)
 	if !isTag || !fsutil.Exists(filepath.Join(checkout, ".git")) {
-		os.RemoveAll(checkout)
+		fsutil.RemoveAll(checkout)
 		report.Status("cloning " + source.URL + " " + label)
 		arguments := []string{"clone", "--depth", "1", "--quiet"}
 		if reference != "" {
@@ -123,7 +123,7 @@ func fetchGit(ctx context.Context, fetched *Fetched, report ui.Reporter) error {
 		command := exec.CommandContext(ctx, "git", arguments...)
 		command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		if err := process.Stream(command, report.Status); err != nil {
-			os.RemoveAll(checkout)
+			fsutil.RemoveAll(checkout)
 			return err
 		}
 	}
@@ -176,33 +176,27 @@ func RemoteTags(ctx context.Context, url string) ([]string, error) {
 	return tags, nil
 }
 
-func CloneInto(ctx context.Context, url string, reference string, subdir string, target string, report ui.Reporter) error {
+func cloneToTemp(ctx context.Context, url string, reference string, parent string, report ui.Reporter) (string, func(), error) {
 	if err := requireGit(); err != nil {
-		return err
+		return "", nil, err
 	}
-	staging, err := os.MkdirTemp(filepath.Dir(target), ".nwm-clone-")
+	staging, err := os.MkdirTemp(parent, ".nwm-clone-")
 	if err != nil {
-		return err
+		return "", nil, err
 	}
-	defer os.RemoveAll(staging)
+	cleanup := func() { fsutil.RemoveAll(staging) }
 	arguments := []string{"clone", "--depth", "1", "--quiet"}
 	if reference != "" {
 		arguments = append(arguments, "--branch", reference)
 	}
-	command := exec.CommandContext(ctx, "git", append(arguments, url, filepath.Join(staging, "repo"))...)
+	checkout := filepath.Join(staging, "repo")
+	command := exec.CommandContext(ctx, "git", append(arguments, url, checkout)...)
 	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	if err := process.Stream(command, report.Status); err != nil {
-		return err
+		cleanup()
+		return "", nil, err
 	}
-	source, err := fsutil.SafeJoin(filepath.Join(staging, "repo"), subdir)
-	if err != nil {
-		return err
-	}
-	prepared := filepath.Join(staging, "prepared")
-	if err := fsutil.CopyDir(source, prepared, fsutil.SkipGit); err != nil {
-		return err
-	}
-	return fsutil.ReplaceDir(prepared, target)
+	return checkout, cleanup, nil
 }
 
 func requireGit() error {

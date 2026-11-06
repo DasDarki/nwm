@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/DasDarki/nwm/internal/buildinfo"
+	"github.com/DasDarki/nwm/internal/fsutil"
 	"github.com/DasDarki/nwm/internal/home"
 	"github.com/DasDarki/nwm/internal/ui"
 )
@@ -56,7 +57,7 @@ func fetchSingleFile(ctx context.Context, fetched *Fetched, report ui.Reporter) 
 	}
 	key := sha256.Sum256([]byte(source.Raw))
 	directory := filepath.Join(home.CacheDir(), "recipes", "file-"+hex.EncodeToString(key[:8]))
-	os.RemoveAll(directory)
+	fsutil.RemoveAll(directory)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
 	}

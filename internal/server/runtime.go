@@ -20,6 +20,7 @@ type RunInfo struct {
 	StartedAt  time.Time `json:"started_at"`
 	Detached   bool      `json:"detached"`
 	Executable string    `json:"executable"`
+	Socket     string    `json:"socket,omitempty"`
 }
 
 func LogFile(name string) string {
@@ -55,6 +56,10 @@ func StartDetached(name string, directory string, arguments []string, environmen
 	if err != nil {
 		return nil, err
 	}
+	nwm, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
 	if _, err := home.Ensure(home.LogsDir()); err != nil {
 		return nil, err
 	}
@@ -63,7 +68,8 @@ func StartDetached(name string, directory string, arguments []string, environmen
 		return nil, err
 	}
 	defer logFile.Close()
-	command := exec.Command(executable, arguments...)
+	supervisorArguments := append([]string{supervisorCommand, name, directory, "--"}, arguments...)
+	command := exec.Command(nwm, supervisorArguments...)
 	command.Dir = directory
 	command.Env = append(os.Environ(), environment...)
 	command.Stdout = logFile
@@ -72,7 +78,7 @@ func StartDetached(name string, directory string, arguments []string, environmen
 	if err := command.Start(); err != nil {
 		return nil, fmt.Errorf("starting server: %w", err)
 	}
-	info := &RunInfo{PID: command.Process.Pid, StartedAt: time.Now(), Detached: true, Executable: executable}
+	info := &RunInfo{PID: command.Process.Pid, StartedAt: time.Now(), Detached: true, Executable: executable, Socket: SocketPath(name)}
 	if err := writeRunInfo(name, info); err != nil {
 		return info, err
 	}
@@ -130,11 +136,29 @@ func Stop(name string, timeout time.Duration) error {
 	if !running {
 		return fmt.Errorf("server %q is not running", name)
 	}
-	if err := process.Terminate(info.PID, timeout); err != nil {
+	if info.Socket != "" && control(name, "stop") == nil {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if !process.Alive(info.PID) {
+				os.Remove(runFile(name))
+				return nil
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	if err := process.Terminate(info.PID, 5*time.Second); err != nil {
 		return fmt.Errorf("stopping server: %w", err)
 	}
 	os.Remove(runFile(name))
 	return nil
+}
+
+func RegisterRunning(name string, info *RunInfo) error {
+	return writeRunInfo(name, info)
+}
+
+func ClearRunning(name string) {
+	os.Remove(runFile(name))
 }
 
 func writeRunInfo(name string, info *RunInfo) error {

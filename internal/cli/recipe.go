@@ -144,15 +144,37 @@ func applyRecipe(fetched *recipe.Fetched, target recipe.Target, flags recipeFlag
 }
 
 func applyPrepared(fetched *recipe.Fetched, prepared *preparedRecipe, target recipe.Target, flags recipeFlags) error {
+	_, err := applyPreparedWith(fetched, prepared, target, flags, false)
+	return err
+}
+
+func applyPreparedWith(fetched *recipe.Fetched, prepared *preparedRecipe, target recipe.Target, flags recipeFlags, dev bool) (*recipe.Result, error) {
 	manifest := prepared.manifest
-	if len(manifest.Hooks) > 0 && !flags.skipHooks && fetched.Remote && !flags.assumeYes {
-		ui.Warn("this recipe runs commands on your machine:")
-		for _, hook := range manifest.Hooks {
-			fmt.Fprintln(os.Stderr, "   "+ui.Accent.Render(strings.Join(hook.Run, " ")))
+	allowBuilds := !fetched.Remote || flags.assumeYes
+	var builds []string
+	for _, group := range [][]recipe.Resource{manifest.Packages, manifest.Assets} {
+		for _, resource := range group {
+			if resource.Build != "" {
+				builds = append(builds, resource.Name+": "+resource.Build)
+			}
 		}
-		if !ui.Confirm("Run these hooks?") {
+	}
+	needsConfirmation := fetched.Remote && !flags.assumeYes && (len(builds) > 0 || len(manifest.Hooks) > 0 && !flags.skipHooks)
+	if needsConfirmation {
+		ui.Warn("this recipe runs commands on your machine:")
+		for _, build := range builds {
+			fmt.Fprintln(os.Stderr, "   "+ui.Accent.Render("build "+build))
+		}
+		if !flags.skipHooks {
+			for _, hook := range manifest.Hooks {
+				fmt.Fprintln(os.Stderr, "   "+ui.Accent.Render(strings.Join(hook.Run, " ")))
+			}
+		}
+		if ui.Confirm("Run these commands?") {
+			allowBuilds = true
+		} else {
 			flags.skipHooks = true
-			ui.Hint("hooks skipped")
+			ui.Hint("commands skipped")
 		}
 	}
 	return recipe.Apply(fetched, manifest, target, recipe.ApplyOptions{
@@ -160,6 +182,8 @@ func applyPrepared(fetched *recipe.Fetched, prepared *preparedRecipe, target rec
 		Secrets:      prepared.secrets,
 		SkipServices: flags.skipServices,
 		SkipHooks:    flags.skipHooks,
+		Dev:          dev,
+		ConfirmBuild: func(string, []string) bool { return allowBuilds },
 	})
 }
 

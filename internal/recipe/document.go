@@ -55,6 +55,11 @@ func IsRecipeFileName(name string) bool {
 	return lowered == strings.ToLower(DSLFileName) || strings.HasSuffix(lowered, ".recipefile") || strings.HasSuffix(lowered, ".recipe") || strings.HasSuffix(lowered, ".toml")
 }
 
+func isRecipeDocument(name string) bool {
+	lowered := strings.ToLower(name)
+	return name == DSLFileName || name == FileName || strings.HasSuffix(lowered, ".recipefile") || strings.HasSuffix(lowered, ".recipe")
+}
+
 func FormatForFile(name string) Format {
 	if strings.HasSuffix(strings.ToLower(name), ".toml") {
 		return FormatTOML

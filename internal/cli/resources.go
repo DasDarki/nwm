@@ -3,10 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/DasDarki/nwm/internal/fsutil"
 	"github.com/DasDarki/nwm/internal/server"
 	"github.com/DasDarki/nwm/internal/state"
 	"github.com/DasDarki/nwm/internal/ui"
@@ -200,7 +200,7 @@ func newResourceRemoveCommand(spec resourceCommandSpec) *cobra.Command {
 				if _, err := server.Disable(config, spec.kind, name); err != nil {
 					return err
 				}
-				if err := os.RemoveAll(resource.Path); err != nil {
+				if err := fsutil.RemoveAll(resource.Path); err != nil {
 					return err
 				}
 				ui.Success("Removed %s", name)

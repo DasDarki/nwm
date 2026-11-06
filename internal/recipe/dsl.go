@@ -82,7 +82,7 @@ var statements = []Statement{
 		}
 		return setNested(m.Config, args[0].Text, args[1].value())
 	}},
-	{Keyword: "package", Aliases: []string{"pkg"}, Usage: "package <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>]", Summary: "add a package (vault, git or recipe folder)", Options: resourceOptions, apply: func(m *Manifest, args []token) error {
+	{Keyword: "package", Aliases: []string{"pkg"}, Usage: "package <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>] [local <dir>] [build \"<cmd>\"] [watch \"<cmd>\"] [output <dir>] [reload hot|full]", Summary: "add a package (vault, git or recipe folder)", Options: resourceOptions, apply: func(m *Manifest, args []token) error {
 		resource, err := parseResource(args, "package")
 		if err != nil {
 			return err
@@ -90,7 +90,7 @@ var statements = []Statement{
 		m.Packages = putResource(m.Packages, resource)
 		return nil
 	}},
-	{Keyword: "assets", Aliases: []string{"asset"}, Usage: "assets <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>]", Summary: "add an asset pack", Options: resourceOptions, apply: func(m *Manifest, args []token) error {
+	{Keyword: "assets", Aliases: []string{"asset"}, Usage: "assets <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>] [local <dir>]", Summary: "add an asset pack", Options: resourceOptions, apply: func(m *Manifest, args []token) error {
 		resource, err := parseResource(args, "assets")
 		if err != nil {
 			return err
@@ -127,6 +127,15 @@ var statements = []Statement{
 		m.Env[args[0].Text] = joinTokens(args[1:])
 		return nil
 	}},
+	{Keyword: "tool", Usage: "tool <name>...", Summary: "a program the recipe needs, e.g. nebra or dotnet", apply: func(m *Manifest, args []token) error {
+		for _, arg := range args {
+			if !slices.Contains(m.Tools, arg.Text) {
+				m.Tools = append(m.Tools, arg.Text)
+			}
+		}
+		return requireArgs(args, 1, "tool <name>...")
+	}},
+	{Keyword: "dev", Usage: "dev <statement>", Summary: "a statement that only applies in nwm dev, e.g. dev package test-utils path tests/utils"},
 	{Keyword: "hook", Usage: "hook [in <dir>] <command>...", Summary: "run a command after applying", apply: func(m *Manifest, args []token) error {
 		hook := Hook{}
 		if len(args) >= 2 && args[0].Text == "in" && !args[0].Quoted {
@@ -144,7 +153,34 @@ var statements = []Statement{
 	}},
 }
 
-var resourceOptions = []string{"enable", "git", "ref", "subdir", "path"}
+var resourceOptions = []string{"enable", "git", "ref", "subdir", "path", "local", "build", "watch", "output", "reload"}
+
+var devForbidden = []string{"recipe", "description", "author", "keywords", "dev"}
+
+func init() {
+	for index := range statements {
+		if statements[index].Keyword == "dev" {
+			statements[index].apply = applyDev
+		}
+	}
+}
+
+func applyDev(m *Manifest, args []token) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: dev <statement>")
+	}
+	statement, found := findStatement(args[0].Text)
+	if !found {
+		return fmt.Errorf("unknown command %q", args[0].Text)
+	}
+	if slices.Contains(devForbidden, statement.Keyword) {
+		return fmt.Errorf("%s cannot be used with dev", statement.Keyword)
+	}
+	if m.Dev == nil {
+		m.Dev = &Manifest{}
+	}
+	return statement.apply(m.Dev, args[1:])
+}
 
 func Statements() []Statement {
 	return statements
@@ -226,6 +262,19 @@ func parseResource(args []token, kind string) (Resource, error) {
 			resource.Subdir = value
 		case "path":
 			resource.Path = value
+		case "local":
+			resource.Local = value
+		case "build":
+			resource.Build = value
+		case "watch":
+			resource.Watch = value
+		case "output":
+			resource.Output = value
+		case "reload":
+			if value != ReloadHot && value != ReloadFull {
+				return resource, fmt.Errorf("%s %s: reload must be hot or full", kind, resource.Name)
+			}
+			resource.Reload = value
 		default:
 			return resource, fmt.Errorf("unknown option %q for %s, expected %s", option, kind, strings.Join(resourceOptions, ", "))
 		}
@@ -501,6 +550,24 @@ func joinTokens(args []token) string {
 }
 
 func RenderDSL(m *Manifest) string {
+	sections := renderSections(m, true)
+	if m.Dev != nil {
+		for _, section := range renderSections(m.Dev, false) {
+			prefixed := make([]string, len(section))
+			for index, line := range section {
+				prefixed[index] = "dev " + line
+			}
+			sections = append(sections, prefixed)
+		}
+	}
+	blocks := make([]string, len(sections))
+	for index, section := range sections {
+		blocks[index] = strings.Join(section, "\n")
+	}
+	return strings.Join(blocks, "\n\n") + "\n"
+}
+
+func renderSections(m *Manifest, withHeader bool) [][]string {
 	var sections [][]string
 	add := func(lines ...string) {
 		var filtered []string
@@ -523,7 +590,10 @@ func RenderDSL(m *Manifest) string {
 		return strings.Join(parts, " ")
 	}
 
-	header := []string{join("recipe", QuoteWord(m.Recipe.Name), m.Recipe.Version)}
+	var header []string
+	if withHeader {
+		header = append(header, join("recipe", QuoteWord(m.Recipe.Name), m.Recipe.Version))
+	}
 	if m.Recipe.Description != "" {
 		header = append(header, "description "+QuoteWord(m.Recipe.Description))
 	}
@@ -532,6 +602,9 @@ func RenderDSL(m *Manifest) string {
 	}
 	if len(m.Recipe.Keywords) > 0 {
 		header = append(header, "keywords "+quoteWords(m.Recipe.Keywords))
+	}
+	if len(m.Tools) > 0 {
+		header = append(header, "tool "+quoteWords(m.Tools))
 	}
 	add(header...)
 
@@ -643,11 +716,7 @@ func RenderDSL(m *Manifest) string {
 	}
 	add(hookLines...)
 
-	blocks := make([]string, len(sections))
-	for index, section := range sections {
-		blocks[index] = strings.Join(section, "\n")
-	}
-	return strings.Join(blocks, "\n\n") + "\n"
+	return sections
 }
 
 func formatResources(keyword string, resources []Resource) []string {
@@ -657,7 +726,7 @@ func formatResources(keyword string, resources []Resource) []string {
 		if resource.Enable {
 			line += " enable"
 		}
-		for _, pair := range [][2]string{{"git", resource.Git}, {"ref", resource.Ref}, {"subdir", resource.Subdir}, {"path", resource.Path}} {
+		for _, pair := range [][2]string{{"git", resource.Git}, {"ref", resource.Ref}, {"subdir", resource.Subdir}, {"path", resource.Path}, {"local", resource.Local}, {"build", resource.Build}, {"watch", resource.Watch}, {"output", resource.Output}, {"reload", resource.Reload}} {
 			if pair[1] != "" {
 				line += " " + pair[0] + " " + QuoteWord(pair[1])
 			}
@@ -675,7 +744,7 @@ func quoteWords(words []string) string {
 	return strings.Join(quoted, " ")
 }
 
-var RemovableKinds = []string{"package", "assets", "module", "file", "service", "secret", "env", "var", "config", "hook", "arg", "author", "keywords"}
+var RemovableKinds = []string{"package", "assets", "module", "file", "service", "secret", "env", "var", "config", "hook", "arg", "author", "keywords", "tool", "dev"}
 
 func canonicalKind(kind string) string {
 	if statement, found := findStatement(kind); found {
@@ -687,7 +756,24 @@ func canonicalKind(kind string) string {
 func (m *Manifest) Remove(kind string, name string) error {
 	removed := false
 	kind = canonicalKind(kind)
+	if kind == "dev" {
+		innerKind, innerName, found := strings.Cut(name, " ")
+		if !found || m.Dev == nil {
+			return fmt.Errorf("usage: remove dev <kind> <name>")
+		}
+		if err := m.Dev.Remove(innerKind, innerName); err != nil {
+			return fmt.Errorf("dev %w", err)
+		}
+		if RenderDSL(m.Dev) == "\n" || strings.TrimSpace(RenderDSL(m.Dev)) == "" {
+			m.Dev = nil
+		}
+		return nil
+	}
 	switch kind {
+	case "tool":
+		before := len(m.Tools)
+		m.Tools = slices.DeleteFunc(m.Tools, func(tool string) bool { return tool == name })
+		removed = len(m.Tools) != before
 	case "package":
 		before := len(m.Packages)
 		m.Packages = slices.DeleteFunc(m.Packages, func(r Resource) bool { return r.Name == name })
@@ -748,6 +834,16 @@ func (m *Manifest) Remove(kind string, name string) error {
 func (m *Manifest) Names(kind string) []string {
 	var names []string
 	switch canonicalKind(kind) {
+	case "tool":
+		names = m.Tools
+	case "dev":
+		if m.Dev != nil {
+			for _, inner := range RemovableKinds {
+				if inner != "dev" && len(m.Dev.Names(inner)) > 0 {
+					names = append(names, inner)
+				}
+			}
+		}
 	case "package":
 		for _, resource := range m.Packages {
 			names = append(names, resource.Name)

@@ -139,6 +139,8 @@ func expandResources(expander *Expander, resources []Resource) []Resource {
 	for index, resource := range resources {
 		resource.Git = expander.String(resource.Git)
 		resource.Ref = expander.String(resource.Ref)
+		resource.Build = expander.String(resource.Build)
+		resource.Watch = expander.String(resource.Watch)
 		result[index] = resource
 	}
 	return result
