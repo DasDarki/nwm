@@ -129,12 +129,14 @@ dir = 'Packages/rp-core'
 | `[variables]` | `var` |
 | `[config]` and its sub tables | `config` |
 | `[env]` | `env` |
-| `[[package]]`, `[[assets]]` with `name`, `git`, `ref`, `subdir`, `path`, `enable` | `package`, `assets` |
+| `[[package]]`, `[[assets]]` with `name`, `git`, `ref`, `subdir`, `path`, `enable`, `local`, `build`, `watch`, `output`, `reload` | `package`, `assets` |
 | `[[module]]` with `name`, `linux`, `windows`, `enable` | `module` |
 | `[[file]]` with `source`, `target`, `template` | `file` |
 | `[[service]]` with `name`, `image`, `ports`, `env`, `volumes`, `command`, `ready`, `wait` | `service` (and `use`) |
 | `[[secret]]` with `name`, `length`, `prompt` | `secret` |
 | `[[hook]]` with `run`, `dir` | `hook` |
+| `tools` (list at the top level) | `tool` |
+| `[dev]` with the same tables inside, e.g. `[[dev.package]]`, `[dev.config]` | `dev ...` |
 
 `use` has no table of its own: it is stored as the `[[service]]`, `[[secret]]` and `[env]` entries it expands to.
 Values in `[service.env]` must be strings.

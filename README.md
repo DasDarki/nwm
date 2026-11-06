@@ -58,6 +58,8 @@ nwm server start dev
 | `nwm recipe publish\|unpublish` | Share recipes through the registry |
 | `nwm service list\|add\|up\|down\|logs\|remove` | Manage Docker services of a server |
 | `nwm secret list\|get\|set\|rotate\|remove` | Manage a server's passwords and tokens |
+| `nwm dev` | Develop packages locally with live reload |
+| `nwm server cmd\|attach` | Send console commands to background servers |
 | `nwm self-update` | Update nwm itself |
 
 Short aliases: `nwm s` (server), `nwm p` (package), `nwm a` (assets), `nwm n`/`nwm ns` (nanossharp), `nwm r` (recipe),

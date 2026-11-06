@@ -39,10 +39,14 @@ starts `NanosWorldServer.exe`.
 ```bash
 nwm server start dev -d
 nwm server logs dev -f
+nwm server cmd -s dev package reload all
+nwm server attach dev
 ```
 
-nwm waits two seconds after starting and reports an error (with the path of the log) if the server stopped right away.
-The log file is replaced on each start.
+A small nwm process supervises background servers. It writes their output to the log and keeps their console reachable,
+so `nwm server cmd` sends console commands and `nwm server attach` lets you follow the output and type commands. nwm waits
+two seconds after starting and reports an error (with the path of the log) if the server stopped right away. The log file
+is replaced on each start.
 
 ## Stop and restart
 
@@ -51,9 +55,9 @@ nwm server stop [name] [--timeout 15s] [--services]
 nwm server restart [name] [-- server arguments] [--timeout 15s]
 ```
 
-`stop` asks the server to shut down and kills it after the timeout. On Linux the whole process group is signalled.
-On Windows the server is terminated directly, because a background process has no console to receive `Ctrl+C`.
-With `--services` the server's Docker services are stopped as well.
+`stop` sends `stop` to the console of background servers and `nwm dev` servers, so they shut down gracefully on Linux
+and Windows. If the server does not exit within the timeout it is killed. With `--services` the server's Docker services
+are stopped as well.
 
 `restart` stops the server if it is running and starts it again in the background.
 

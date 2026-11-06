@@ -30,6 +30,21 @@ processes that no longer exist are cleaned up automatically.
 
 **NanosSharp disabled itself after an update.** Run `nwm nanossharp update` to get a release that matches the server.
 
+## Local development
+
+**"synced (links unavailable)" in `nwm dev`.** The file system does not support links, for example a network drive,
+exFAT or a `\\wsl$` path. nwm copies the package folders instead and keeps them in sync, which is slower for big
+packages. Move the project or the server (`nwm dev -d <dir>`) to a local NTFS or Linux drive to get links.
+
+**"this server was started in the foreground".** `nwm server cmd` reaches servers started with `--detach` or `nwm dev`.
+For a foreground server, type into its terminal.
+
+**A change does not reload.** Check `/status`: only `path` and `local` packages are watched. Packages with a `watch`
+builder reload when the builder writes its output, look for errors in its prefixed output.
+
+**"the recipe has no local packages to develop".** `nwm dev` needs at least one package with `path` or an existing
+`local` checkout.
+
 ## Services
 
 **"docker daemon is not reachable".** Start Docker, and on Linux make sure your user may use it

@@ -135,6 +135,25 @@ nwm server trust [name] [--revoke] [--global]
 
 Shows, grants or withdraws the approval for `--enable_unsafe_libs`. See [C modules](../servers/c-modules.md).
 
+### server cmd
+
+```text
+nwm server cmd [-s name] [--wait 1.5s] <console command>...
+```
+
+Sends a command to the console of a server started with `--detach` or `nwm dev` and shows the server's response from the
+log, e.g. `nwm server cmd package hotreload my-gamemode`. Everything after the first word belongs to the command, so put
+`-s` before it.
+
+### server attach
+
+```text
+nwm server attach [name]
+```
+
+Follows a background server's output and sends every line you type to its console. `Ctrl+C` detaches, the server keeps
+running.
+
 ### server remove
 
 ```text
@@ -210,6 +229,24 @@ All commands take `-s/--server`.
 | `set <name> [value]` | Set a value, asks when not given |
 | `rotate <name> [--length 24]` | Replace with a new random value |
 | `remove <name>` | Delete a secret (alias `rm`) |
+
+## nwm dev
+
+```text
+nwm dev [directory | file] [-- server arguments] [flags]
+```
+
+Develop packages locally with live reload, see [Local development](../local-development.md).
+
+| Flag | Description |
+|---|---|
+| `-n, --name <name>` | Name of the development server (default `<recipe>-dev`) |
+| `-d, --dir <dir>` | Folder of the development server |
+| `--local` | Keep the server in `.nwm/` next to the recipe |
+| `--reapply` | Apply the whole recipe again even if it did not change |
+| `--allow-unsafe-libs` | Approve `--enable_unsafe_libs` without asking |
+| `--var <name=value>`, `--secret <name=value>` | Recipe variables and secrets |
+| `--no-services`, `--no-hooks` | Skip services or hooks |
 
 ## nwm self-update
 

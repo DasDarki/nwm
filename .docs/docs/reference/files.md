@@ -14,7 +14,7 @@ Everything nwm stores lives in `~/.nwm`, or in `NWM_HOME` if set.
 | `servers/<name>/` | Default location of servers created by nwm |
 | `secrets/<name>.toml` | Secrets of a server, mode `0600` |
 | `logs/<name>.log` | Output of the last background start |
-| `run/<name>.json` | Process id of a running server |
+| `run/<name>.json` | Process id and console socket of a running server |
 | `steamcmd/` | SteamCMD downloaded by nwm |
 | `cache/registry/index.json` | Cached registry index (one day) |
 | `cache/store-index.json` | Cached nanos world store catalog for completion (one day) |
@@ -22,6 +22,15 @@ Everything nwm stores lives in `~/.nwm`, or in `NWM_HOME` if set.
 | `cache/modules/` | Downloaded C module files |
 | `cache/nanossharp/` | NanosSharp installer |
 | `cache/update-check.json` | Time and result of the last update check |
+
+The console socket of a running server lives in the system temp folder as `nwm-<hash>.sock`.
+
+## Project folder
+
+| Path | Content |
+|---|---|
+| `.nwm/server/` | Development server created by `nwm dev --local` |
+| `.nwm/.gitignore` | Keeps `.nwm/` out of git |
 
 ## Server folder
 

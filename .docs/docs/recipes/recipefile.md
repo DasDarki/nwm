@@ -170,6 +170,7 @@ Alias: `pkg`
 
 ```recipefile
 package <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>]
+        [local <dir>] [build "<cmd>"] [watch "<cmd>"] [output <dir>] [reload hot|full]
 ```
 
 Installs a package into `Packages/<name>`.
@@ -188,8 +189,15 @@ Installs a package into `Packages/<name>`.
 | `ref <ref>` | Tag or branch to clone, default branch otherwise |
 | `subdir <dir>` | Use a folder of the repository as the package |
 | `path <dir>` | Copy the package from the recipe folder |
+| `local <dir>` | In `nwm dev`, use this local checkout if it exists, see [Local development](../local-development.md#several-packages-and-repositories) |
+| `build "<cmd>"` | Build the package before installing it, e.g. `build "npm run build"` |
+| `watch "<cmd>"` | Builder that `nwm dev` keeps running, e.g. `watch "npm run watch"` |
+| `output <dir>` | Folder with the built files, merged into the package |
+| `reload hot\|full` | How `nwm dev` reloads the package, `hot` by default |
 
-Git and recipe packages replace an existing folder of the same name. The `.git` folder is not copied.
+Packages with a `nebra.toml` are built with `nebra build` and watched with `nebra watch` automatically. Git and recipe
+packages replace an existing folder of the same name. Hidden files, recipe files, build sources and folders of other
+local packages are left out. See [Local development](../local-development.md) for how packages are mounted.
 
 ## assets
 
@@ -215,6 +223,34 @@ a platform without a source is skipped.
 
 ```recipefile
 module mysql linux https://example.com/libmysql.so windows https://example.com/mysql.dll enable
+```
+
+## tool
+
+```recipefile
+tool <name>...
+```
+
+Programs the recipe needs, such as `nebra`, `dotnet` or `npm`. nwm checks them before applying and names the missing ones
+with a link to install them.
+
+```recipefile
+tool nebra dotnet
+```
+
+## dev
+
+```recipefile
+dev <statement>
+```
+
+A statement that only applies in [`nwm dev`](../local-development.md). Every statement except `recipe`, `description`,
+`author` and `keywords` can be used.
+
+```recipefile
+dev package test-utils path tests/utils enable
+dev config debug.log_level 3
+dev use redis
 ```
 
 ## file

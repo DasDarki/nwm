@@ -34,6 +34,7 @@ const sidebars: SidebarsConfig = {
         'recipes/recipe-toml',
       ],
     },
+    'local-development',
     'services',
     'secrets',
     {
