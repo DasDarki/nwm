@@ -136,6 +136,23 @@ var statements = []Statement{
 		return requireArgs(args, 1, "tool <name>...")
 	}},
 	{Keyword: "dev", Usage: "dev <statement>", Summary: "a statement that only applies in nwm dev, e.g. dev package test-utils path tests/utils"},
+	{Keyword: "expose", Usage: "expose <ENV_NAME>...", Summary: "make env values readable in Lua through Server.GetCustomSettings()", apply: func(m *Manifest, args []token) error {
+		if err := requireArgs(args, 1, "expose <ENV_NAME>..."); err != nil {
+			return err
+		}
+		if m.Config == nil {
+			m.Config = map[string]any{}
+		}
+		for _, arg := range args {
+			if !variableNamePattern.MatchString(arg.Text) {
+				return fmt.Errorf("invalid env name %q", arg.Text)
+			}
+			if err := setNested(m.Config, "custom_settings."+arg.Text, "${env."+arg.Text+"}"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 	{Keyword: "hook", Usage: "hook [in <dir>] <command>...", Summary: "run a command after applying", apply: func(m *Manifest, args []token) error {
 		hook := Hook{}
 		if len(args) >= 2 && args[0].Text == "in" && !args[0].Quoted {

@@ -165,6 +165,15 @@ func (c *Completer) candidates(previous []token) []Suggestion {
 			}
 		}
 		return nil
+	case "expose":
+		if c.Manifest == nil {
+			return nil
+		}
+		names := c.Manifest.Names("env")
+		if c.Manifest.Dev != nil {
+			names = append(names, c.Manifest.Dev.Names("env")...)
+		}
+		return unusedOptions(names, used)
 	case "tool":
 		var tools []Suggestion
 		for _, tool := range KnownTools() {

@@ -12,12 +12,18 @@ import (
 
 var placeholderPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_.]*)\}`)
 
-const secretPrefix = "secret."
+const (
+	secretPrefix = "secret."
+	envPrefix    = "env."
+)
 
 type Expander struct {
 	values      map[string]any
 	missing     map[string]bool
 	keepSecrets bool
+	env         map[string]any
+	resolving   []string
+	cycle       string
 }
 
 func NewExpander(defaults map[string]any, overrides map[string]any, builtins map[string]string, secrets map[string]string) *Expander {
@@ -42,6 +48,9 @@ func ExpandSecrets(text string, secrets map[string]string) (string, error) {
 func (e *Expander) String(text string) string {
 	return placeholderPattern.ReplaceAllStringFunc(text, func(match string) string {
 		name := placeholderPattern.FindStringSubmatch(match)[1]
+		if strings.HasPrefix(name, envPrefix) {
+			return e.expandEnv(strings.TrimPrefix(name, envPrefix), match)
+		}
 		if e.keepSecrets && strings.HasPrefix(name, secretPrefix) {
 			if _, found := e.values[name]; !found {
 				e.missing[name] = true
@@ -57,10 +66,25 @@ func (e *Expander) String(text string) string {
 	})
 }
 
+func (e *Expander) expandEnv(key string, placeholder string) string {
+	raw, found := e.env[key]
+	if !found {
+		e.missing[envPrefix+key] = true
+		return placeholder
+	}
+	if slices.Contains(e.resolving, key) {
+		e.cycle = strings.Join(append(slices.Clone(e.resolving), key), " -> ")
+		return placeholder
+	}
+	e.resolving = append(e.resolving, key)
+	defer func() { e.resolving = e.resolving[:len(e.resolving)-1] }()
+	return e.String(fmt.Sprint(raw))
+}
+
 func (e *Expander) Value(value any) any {
 	switch typed := value.(type) {
 	case string:
-		if match := placeholderPattern.FindStringSubmatch(typed); match != nil && match[0] == typed {
+		if match := placeholderPattern.FindStringSubmatch(typed); match != nil && match[0] == typed && !strings.HasPrefix(match[1], envPrefix) {
 			if resolved, found := e.values[match[1]]; found {
 				return resolved
 			}
@@ -92,14 +116,18 @@ func (e *Expander) Strings(items []string) []string {
 }
 
 func (e *Expander) Err() error {
+	if e.cycle != "" {
+		return fmt.Errorf("env values reference each other in a circle: %s", e.cycle)
+	}
 	if len(e.missing) == 0 {
 		return nil
 	}
 	names := slices.Sorted(maps.Keys(e.missing))
-	return fmt.Errorf("unknown variables: %s (define them in [variables] or pass --var name=value)", strings.Join(names, ", "))
+	return fmt.Errorf("unknown variables: %s (define them with var, env or secret, or pass --var name=value)", strings.Join(names, ", "))
 }
 
 func (m *Manifest) Expand(expander *Expander) *Manifest {
+	expander.env = m.Env
 	expanded := *m
 	expanded.Server.Args = expander.Strings(m.Server.Args)
 	if m.Config != nil {

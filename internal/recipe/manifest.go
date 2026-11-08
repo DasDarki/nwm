@@ -3,8 +3,10 @@ package recipe
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/DasDarki/nwm/internal/docker"
@@ -137,6 +139,39 @@ func loadTOML(path string) (*Manifest, error) {
 }
 
 func (m *Manifest) Validate(directory string) error {
+	if err := m.validateParts(directory); err != nil {
+		return err
+	}
+	return m.validateEnvReferences()
+}
+
+func (m *Manifest) validateEnvReferences() error {
+	base, merged := m.WithoutDev(), m.WithDev()
+	var problems []string
+	for _, view := range []*Manifest{base, merged} {
+		for _, match := range placeholderPattern.FindAllStringSubmatch(RenderDSL(view), -1) {
+			key, isEnv := strings.CutPrefix(match[1], envPrefix)
+			if _, known := view.Env[key]; isEnv && !known && !slices.Contains(problems, key) {
+				problems = append(problems, key)
+			}
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("invalid recipe:\n  - ${env.%s} has no matching env statement", strings.Join(problems, "}, ${env."))
+	}
+	expander := NewExpander(nil, nil, nil, nil)
+	expander.env = merged.Env
+	expander.keepSecrets = true
+	for _, key := range slices.Sorted(maps.Keys(merged.Env)) {
+		expander.expandEnv(key, "")
+	}
+	if expander.cycle != "" {
+		return fmt.Errorf("invalid recipe:\n  - env values reference each other in a circle: %s", expander.cycle)
+	}
+	return nil
+}
+
+func (m *Manifest) validateParts(directory string) error {
 	var problems []string
 	add := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
@@ -220,7 +255,7 @@ func (m *Manifest) Validate(directory string) error {
 	if m.Dev != nil {
 		overlay := *m.Dev
 		overlay.Recipe = m.Recipe
-		if err := overlay.Validate(directory); err != nil {
+		if err := overlay.validateParts(directory); err != nil {
 			problems = append(problems, "dev: "+strings.TrimPrefix(err.Error(), "invalid recipe:\n  - "))
 		}
 	}

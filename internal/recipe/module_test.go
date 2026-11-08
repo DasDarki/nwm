@@ -54,7 +54,7 @@ func TestInstallModuleCreatesPackage(t *testing.T) {
 		t.Errorf("binary missing: %v", err)
 	}
 
-	if err := writeConfiguration(serverDir, &Manifest{Modules: []Module{module}}); err != nil {
+	if err := writeConfiguration(serverDir, &Manifest{Modules: []Module{module}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	config, _ := server.LoadConfig(serverDir)

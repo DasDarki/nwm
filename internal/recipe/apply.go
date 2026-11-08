@@ -95,10 +95,10 @@ func Apply(fetched *Fetched, manifest *Manifest, target Target, options ApplyOpt
 			return installModules(ctx, fetched.Dir, target.Dir, manifest.Modules, report)
 		}},
 		{"Copying files", len(manifest.Files) == 0, func(_ context.Context, report ui.Reporter) error {
-			return copyFiles(fetched.Dir, target, manifest.Files, options, fetched.Manifest.Variables, report)
+			return copyFiles(fetched.Dir, target, manifest, options, fetched.Manifest.Variables, report)
 		}},
 		{"Writing configuration", false, func(context.Context, ui.Reporter) error {
-			return writeConfiguration(target.Dir, manifest)
+			return writeConfiguration(target.Dir, manifest, options.Secrets)
 		}},
 		{"Installing NanosSharp", !manifest.Server.NanosSharp || nanossharp.Installed(target.Dir), func(ctx context.Context, report ui.Reporter) error {
 			return nanossharp.Install(ctx, target.Dir, report)
@@ -365,9 +365,9 @@ func modulePackageManifest(name string, modules []string) string {
 	return fmt.Sprintf("[meta]\ntitle = %s\nauthor = \"nwm\"\nversion = \"1.0.0\"\n\n[c_module]\nmodules = [%s]\n", strconv.Quote(name), strings.Join(quoted, ", "))
 }
 
-func copyFiles(recipeDir string, target Target, files []File, options ApplyOptions, defaults map[string]any, report ui.Reporter) error {
+func copyFiles(recipeDir string, target Target, manifest *Manifest, options ApplyOptions, defaults map[string]any, report ui.Reporter) error {
 	parsed := parseOverrides(options.Variables)
-	for _, file := range files {
+	for _, file := range manifest.Files {
 		source, err := fsutil.SafeJoin(recipeDir, file.Source)
 		if err != nil {
 			return err
@@ -388,6 +388,7 @@ func copyFiles(recipeDir string, target Target, files []File, options ApplyOptio
 			return err
 		}
 		expander := NewExpander(defaults, parsed, Builtins(target), options.Secrets)
+		expander.env = manifest.Env
 		rendered := expander.String(string(content))
 		if err := expander.Err(); err != nil {
 			return fmt.Errorf("%s: %w", file.Source, err)
@@ -402,7 +403,20 @@ func copyFiles(recipeDir string, target Target, files []File, options ApplyOptio
 	return nil
 }
 
-func writeConfiguration(serverDir string, manifest *Manifest) error {
+func protectIfSecret(path string, secretValues map[string]string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	for _, value := range secretValues {
+		if value != "" && strings.Contains(string(content), value) {
+			return os.Chmod(path, 0o600)
+		}
+	}
+	return nil
+}
+
+func writeConfiguration(serverDir string, manifest *Manifest, secretValues map[string]string) error {
 	config, err := server.LoadConfig(serverDir)
 	if err != nil {
 		return err
@@ -436,6 +450,9 @@ func writeConfiguration(serverDir string, manifest *Manifest) error {
 		}
 	}
 	if err := config.Save(); err != nil {
+		return err
+	}
+	if err := protectIfSecret(config.Path(), secretValues); err != nil {
 		return err
 	}
 	if len(manifest.Env) == 0 {
@@ -506,6 +523,16 @@ func ResolveServiceSecrets(service docker.Service, secretValues map[string]strin
 	}
 	if len(service.Ready) == 0 {
 		resolved.Ready = nil
+	}
+	if len(service.Command) > 0 {
+		resolved.Command = make([]string, len(service.Command))
+		for index, argument := range service.Command {
+			expanded, err := ExpandSecrets(argument, secretValues)
+			if err != nil {
+				return service, fmt.Errorf("service %s: %w", service.Name, err)
+			}
+			resolved.Command[index] = expanded
+		}
 	}
 	if len(service.Env) == 0 {
 		return resolved, nil
