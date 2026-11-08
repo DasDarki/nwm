@@ -139,4 +139,5 @@ dir = 'Packages/rp-core'
 | `[dev]` with the same tables inside, e.g. `[[dev.package]]`, `[dev.config]` | `dev ...` |
 
 `use` has no table of its own: it is stored as the `[[service]]`, `[[secret]]` and `[env]` entries it expands to.
+`expose NAME` is stored as `NAME = '${env.NAME}'` in `[config.custom_settings]`.
 Values in `[service.env]` must be strings.

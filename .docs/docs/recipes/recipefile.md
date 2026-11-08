@@ -348,6 +348,35 @@ env API_URL https://api.example.com
 env STEAM_TOKEN ${secret.steam_token}
 ```
 
+Values can be built from variables, secrets and other env values with `${env.NAME}`, see
+[Variables](./variables.md#other-env-values).
+
+:::caution Lua cannot read env values
+Only the server process and programs such as NanosSharp get these values. In Lua `os.getenv` is disabled unless the server
+runs with `--enable_unsafe_libs`. Use [`expose`](#expose) to pass a value to Lua scripts.
+:::
+
+## expose
+
+```recipefile
+expose <ENV_NAME>...
+```
+
+Makes env values readable in Lua on the server through `Server.GetCustomSettings()`.
+
+```recipefile
+use postgres
+expose DATABASE_URL
+```
+
+```lua
+local url = Server.GetCustomSettings().DATABASE_URL
+```
+
+`expose NAME` is shorthand for `config custom_settings.NAME ${env.NAME}` and is stored in that form when the editor saves
+the recipe. The value is written to `Config.toml`. When it contains a secret, nwm makes that file readable only by you
+(mode `0600` on Linux).
+
 ## hook
 
 ```recipefile

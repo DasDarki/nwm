@@ -20,7 +20,17 @@ use redis port 16379
 ```
 
 This adds the containers, generates passwords and writes `DATABASE_URL` and `REDIS_URL` to the server's `.env`, which
-the server process receives as environment variables.
+the server process receives as environment variables. Lua scripts cannot read those by default, so pass the values on
+with [`expose`](./recipes/recipefile.md#expose):
+
+```recipefile
+use postgres
+expose DATABASE_URL
+```
+
+```lua
+local url = Server.GetCustomSettings().DATABASE_URL
+```
 
 For anything else, describe the container yourself with [`service`](./recipes/recipefile.md#service):
 

@@ -152,7 +152,8 @@ Named entries (`package x`, `service x`, `var x`, `config k`, `env K`) replace e
 | `use <image> [as <name>] [port <host port>] [env K=V]...` | `require_service`, `requires` | Service with presets, see below |
 | `service <name> <image> [port <p>] [env K=V] [volume <v>] [ready "<check>"] [nowait] [command <args>...]` | `svc` | Docker service started with the server |
 | `secret <name> [random [length] \| prompt]` | | Value from the secret store, used as `${secret.name}` |
-| `env <KEY> <value>` | | Written to the server's `.env` and passed to the server process |
+| `env <KEY> <value>` | | Written to the server's `.env` and passed to the server process, can use `${env.OTHER}` |
+| `expose <KEY>...` | | Makes env values readable in Lua through `Server.GetCustomSettings()` |
 | `hook [in <dir>] <command>...` | | Run after applying, remote recipes ask first |
 
 Built-in variables: `${server.name}`, `${server.path}`, `${os}`.

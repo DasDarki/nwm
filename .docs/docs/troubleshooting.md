@@ -61,6 +61,12 @@ password change after the data volume was created, see [rotating passwords](./se
 **"unknown variables: ...".** A `${...}` placeholder has no value. Define it with `var`, pass `--var name=value`, or
 declare the secret with `secret name`.
 
+**`os.getenv` fails with "Called a disabled unsafe function".** nanos world blocks it without `--enable_unsafe_libs`. Use
+[`expose`](./recipes/recipefile.md#expose) and read the value with `Server.GetCustomSettings()`.
+
+**"env values reference each other in a circle".** Two `env` statements use `${env.NAME}` on each other. The message shows
+the chain.
+
 **"secret ... needs a value, pass --secret ...".** A `prompt` secret was needed but nwm had no terminal to ask. Pass it
 with `--secret name=value`.
 

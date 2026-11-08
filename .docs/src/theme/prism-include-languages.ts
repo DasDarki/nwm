@@ -4,7 +4,7 @@ import type * as PrismNamespace from 'prismjs';
 const recipefileKeywords = [
   'recipe', 'description', 'author', 'keywords', 'branch', 'nanossharp', 'arg', 'var', 'config', 'cfg',
   'package', 'pkg', 'assets', 'asset', 'module', 'mod', 'file', 'use', 'require_service', 'requires',
-  'require', 'service', 'svc', 'secret', 'env', 'hook',
+  'require', 'service', 'svc', 'secret', 'env', 'expose', 'tool', 'dev', 'hook',
 ];
 
 const recipefileOptions = [
