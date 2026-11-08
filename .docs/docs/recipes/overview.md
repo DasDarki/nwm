@@ -46,7 +46,7 @@ nwm server create rp --recipe ./roleplay
 | Services | `use postgres` | [Services](../services.md) |
 | Secrets | `secret steam_token prompt` | [Secrets](../secrets.md) |
 | Environment | `env STEAM_TOKEN ${secret.steam_token}` | [Recipefile](./recipefile.md#env) |
-| Values for Lua | `expose DATABASE_URL` | [Recipefile](./recipefile.md#expose) |
+| Values for Lua | `expose DATABASE_CONNECTION` | [Recipefile](./recipefile.md#expose) |
 | Hooks | `hook dotnet build` | [Recipefile](./recipefile.md#hook) |
 
 ## Two formats

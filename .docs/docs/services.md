@@ -21,15 +21,17 @@ use redis port 16379
 
 This adds the containers, generates passwords and writes `DATABASE_URL` and `REDIS_URL` to the server's `.env`, which
 the server process receives as environment variables. Lua scripts cannot read those by default, so pass the values on
-with [`expose`](./recipes/recipefile.md#expose):
+with [`expose`](./recipes/recipefile.md#expose). For the nanos world `Database` class use `DATABASE_CONNECTION`, which has
+the `host=... port=...` format that class expects:
 
 ```recipefile
 use postgres
-expose DATABASE_URL
+expose DATABASE_CONNECTION
 ```
 
 ```lua
-local url = Server.GetCustomSettings().DATABASE_URL
+local connection = Server.GetCustomSettings().DATABASE_CONNECTION
+local database = Database(DatabaseEngine.PostgreSQL, connection)
 ```
 
 For anything else, describe the container yourself with [`service`](./recipes/recipefile.md#service):
@@ -43,9 +45,9 @@ env MEILISEARCH_URL http://127.0.0.1:7700
 
 | Preset | Image | Port | Data volume | Ready check | Writes to `.env` |
 |---|---|---|---|---|---|
-| `postgres` | `postgres:17` | 5432 | `/var/lib/postgresql/data` | `pg_isready` | `DATABASE_URL` |
-| `mysql` | `mysql:8.4` | 3306 | `/var/lib/mysql` | `mysqladmin ping` | `DATABASE_URL` |
-| `mariadb` | `mariadb:11` | 3306 | `/var/lib/mysql` | `mariadb-admin ping` | `DATABASE_URL` |
+| `postgres` | `postgres:17` | 5432 | `/var/lib/postgresql/data` | `pg_isready` | `DATABASE_CONNECTION`, `DATABASE_URL` |
+| `mysql` | `mysql:8.4` | 3306 | `/var/lib/mysql` | `mysqladmin ping` | `DATABASE_CONNECTION`, `DATABASE_URL` |
+| `mariadb` | `mariadb:11` | 3306 | `/var/lib/mysql` | `mariadb-admin ping` | `DATABASE_CONNECTION`, `DATABASE_URL` |
 | `redis` | `redis:7-alpine` | 6379 | `/data` | `redis-cli ping` | `REDIS_URL` |
 | `valkey` | `valkey/valkey:8-alpine` | 6379 | `/data` | `valkey-cli ping` | `REDIS_URL` |
 | `mongo` | `mongo:8` | 27017 | `/data/db` | `mongosh` ping | `MONGODB_URL` |
@@ -53,9 +55,13 @@ env MEILISEARCH_URL http://127.0.0.1:7700
 | `meilisearch` | `getmeili/meilisearch:v1` | 7700 | `/meili_data` | port | `MEILISEARCH_URL` |
 | `minio` | `minio/minio` | 9000 | `/data` | port | `S3_ENDPOINT` |
 
-The values look like this (the port follows `port`, the password is the service's secret):
+`DATABASE_CONNECTION` is the format of the
+[nanos world `Database` class](https://docs.nanos-world.com/docs/scripting-reference/classes/database), `DATABASE_URL` is
+for other programs. The values look like this (the port follows `port`, the password is the service's secret):
 
 ```text
+DATABASE_CONNECTION=host=127.0.0.1 port=5432 user=nanos password=<password> dbname=nanos
+DATABASE_CONNECTION=host=127.0.0.1 port=3306 user=root password=<password> db=nanos
 DATABASE_URL=postgres://nanos:<password>@127.0.0.1:5432/nanos
 DATABASE_URL=mysql://root:<password>@127.0.0.1:3306/nanos
 REDIS_URL=redis://127.0.0.1:6379
@@ -72,7 +78,8 @@ Databases use the user `nanos` (MySQL and MariaDB: `root`) and the database `nan
 - `use postgres as main-db` names the service, volume and secret `main-db`, `main-db-data`, `main_db_password`
 - `use postgres port 15432` publishes on host port 15432 and adjusts `DATABASE_URL`
 - `use postgres env POSTGRES_DB=game` adds or overrides container variables
-- an `env` entry that already exists in the recipe is not overwritten
+- an `env` entry that already exists in the recipe is not overwritten, so with two databases in one recipe the first
+  keeps `DATABASE_CONNECTION` and `DATABASE_URL`; define the values for the second one yourself with `env`
 - unknown images become a plain service without defaults
 
 ## Ports, volumes and readiness

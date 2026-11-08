@@ -366,11 +366,12 @@ Makes env values readable in Lua on the server through `Server.GetCustomSettings
 
 ```recipefile
 use postgres
-expose DATABASE_URL
+expose DATABASE_CONNECTION
 ```
 
 ```lua
-local url = Server.GetCustomSettings().DATABASE_URL
+local connection = Server.GetCustomSettings().DATABASE_CONNECTION
+local database = Database(DatabaseEngine.PostgreSQL, connection)
 ```
 
 `expose NAME` is shorthand for `config custom_settings.NAME ${env.NAME}` and is stored in that form when the editor saves

@@ -61,6 +61,9 @@ password change after the data volume was created, see [rotating passwords](./se
 **"unknown variables: ...".** A `${...}` placeholder has no value. Define it with `var`, pass `--var name=value`, or
 declare the secret with `secret name`.
 
+**`database "nanos=''" does not exist`.** The nanos world `Database` class was given a URL such as `DATABASE_URL`. It
+expects `host=... port=... user=... password=... dbname=...`, which the database presets provide as `DATABASE_CONNECTION`.
+
 **`os.getenv` fails with "Called a disabled unsafe function".** nanos world blocks it without `--enable_unsafe_libs`. Use
 [`expose`](./recipes/recipefile.md#expose) and read the value with `Server.GetCustomSettings()`.
 

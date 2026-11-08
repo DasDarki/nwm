@@ -185,7 +185,7 @@ terminal the flag is dropped with a warning. nwm asks again when new C modules a
 
 `use` knows `postgres`, `mysql`, `mariadb`, `redis`, `valkey`, `mongo`, `rabbitmq`, `meilisearch` and `minio`.
 It picks a sensible image, port, data volume and readiness check, generates a password secret and writes connection
-values to `.env`, e.g. `use postgres` provides `DATABASE_URL`. `port` changes the host port, other images become plain services.
+values to `.env`, e.g. `use postgres` provides `DATABASE_CONNECTION` for the nanos world `Database` class and `DATABASE_URL` for other programs. `port` changes the host port, other images become plain services.
 Ports bind to `127.0.0.1` unless an IP is given. nwm waits until a service is ready before the server starts.
 
 ### Secrets
