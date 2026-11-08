@@ -84,6 +84,29 @@ func TestExposeUsesPresetValues(t *testing.T) {
 	}
 }
 
+func TestDatabasePresetsProvideNanosConnectionStrings(t *testing.T) {
+	cases := map[string]string{
+		"use postgres port 15432\n": "host=127.0.0.1 port=15432 user=nanos password=${secret.postgres_password} dbname=nanos",
+		"use mysql port 13306\n":    "host=127.0.0.1 port=13306 user=root password=${secret.mysql_password} db=nanos",
+		"use mariadb port 13307\n":  "host=127.0.0.1 port=13307 user=root password=${secret.mariadb_password} db=nanos",
+	}
+	for statement, expected := range cases {
+		manifest, err := ParseDSL("recipe x\n" + statement)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if manifest.Env["DATABASE_CONNECTION"] != expected {
+			t.Errorf("%q: DATABASE_CONNECTION = %v", statement, manifest.Env["DATABASE_CONNECTION"])
+		}
+		if !strings.Contains(RenderDSL(manifest), `env DATABASE_CONNECTION "host=`) {
+			t.Errorf("%q: the value has spaces and must be quoted:\n%s", statement, RenderDSL(manifest))
+		}
+		if _, err := ParseDSL(RenderDSL(manifest)); err != nil {
+			t.Errorf("%q: rendered recipe does not parse: %v", statement, err)
+		}
+	}
+}
+
 func TestEnvReferenceErrors(t *testing.T) {
 	cases := map[string]string{
 		"recipe x\nenv A ${env.B}\nenv B ${env.A}\n":                      "circle",

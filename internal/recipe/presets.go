@@ -21,21 +21,30 @@ type ServicePreset struct {
 var servicePresets = map[string]ServicePreset{
 	"postgres": {
 		Image: "postgres:17", Description: "PostgreSQL database", ContainerPort: "5432", DataPath: "/var/lib/postgresql/data",
-		Ready:     []string{"pg_isready", "-h", "127.0.0.1", "-U", "nanos", "-d", "nanos"},
-		Env:       map[string]string{"POSTGRES_USER": "nanos", "POSTGRES_PASSWORD": "{password}", "POSTGRES_DB": "nanos"},
-		ServerEnv: map[string]string{"DATABASE_URL": "postgres://nanos:{password}@127.0.0.1:{port}/nanos"},
+		Ready: []string{"pg_isready", "-h", "127.0.0.1", "-U", "nanos", "-d", "nanos"},
+		Env:   map[string]string{"POSTGRES_USER": "nanos", "POSTGRES_PASSWORD": "{password}", "POSTGRES_DB": "nanos"},
+		ServerEnv: map[string]string{
+			"DATABASE_URL":        "postgres://nanos:{password}@127.0.0.1:{port}/nanos",
+			"DATABASE_CONNECTION": "host=127.0.0.1 port={port} user=nanos password={password} dbname=nanos",
+		},
 	},
 	"mysql": {
 		Image: "mysql:8.4", Description: "MySQL database", ContainerPort: "3306", DataPath: "/var/lib/mysql",
-		Ready:     []string{"mysqladmin", "ping", "-h", "127.0.0.1", "--silent"},
-		Env:       map[string]string{"MYSQL_ROOT_PASSWORD": "{password}", "MYSQL_DATABASE": "nanos"},
-		ServerEnv: map[string]string{"DATABASE_URL": "mysql://root:{password}@127.0.0.1:{port}/nanos"},
+		Ready: []string{"mysqladmin", "ping", "-h", "127.0.0.1", "--silent"},
+		Env:   map[string]string{"MYSQL_ROOT_PASSWORD": "{password}", "MYSQL_DATABASE": "nanos"},
+		ServerEnv: map[string]string{
+			"DATABASE_URL":        "mysql://root:{password}@127.0.0.1:{port}/nanos",
+			"DATABASE_CONNECTION": "host=127.0.0.1 port={port} user=root password={password} db=nanos",
+		},
 	},
 	"mariadb": {
 		Image: "mariadb:11", Description: "MariaDB database", ContainerPort: "3306", DataPath: "/var/lib/mysql",
-		Ready:     []string{"mariadb-admin", "ping", "-h", "127.0.0.1", "--silent"},
-		Env:       map[string]string{"MARIADB_ROOT_PASSWORD": "{password}", "MARIADB_DATABASE": "nanos"},
-		ServerEnv: map[string]string{"DATABASE_URL": "mysql://root:{password}@127.0.0.1:{port}/nanos"},
+		Ready: []string{"mariadb-admin", "ping", "-h", "127.0.0.1", "--silent"},
+		Env:   map[string]string{"MARIADB_ROOT_PASSWORD": "{password}", "MARIADB_DATABASE": "nanos"},
+		ServerEnv: map[string]string{
+			"DATABASE_URL":        "mysql://root:{password}@127.0.0.1:{port}/nanos",
+			"DATABASE_CONNECTION": "host=127.0.0.1 port={port} user=root password={password} db=nanos",
+		},
 	},
 	"redis": {
 		Image: "redis:7-alpine", Description: "Redis cache", ContainerPort: "6379", DataPath: "/data",
