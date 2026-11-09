@@ -64,11 +64,6 @@ func TestWebFolderIsNeitherMountedNorWatched(t *testing.T) {
 	}
 }
 
-type silentReporter struct{}
-
-func (silentReporter) Status(string)    {}
-func (silentReporter) Progress(float64) {}
-
 func TestBuildWebInstallsAndBuilds(t *testing.T) {
 	if _, err := exec.LookPath("npm"); err != nil {
 		t.Skip("npm is not installed")
