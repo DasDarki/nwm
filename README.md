@@ -145,7 +145,7 @@ Named entries (`package x`, `service x`, `var x`, `config k`, `env K`) replace e
 | `arg <args>...` | | Server launch arguments |
 | `var <name> <default>` | | Variable used as `${name}`, overridable with `--var name=value` |
 | `config <key> <value>` | `cfg` | Value in `Config.toml`, e.g. `discover.port` |
-| `package <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>]` | `pkg` | Package from the vault (name only), git or the recipe folder. `enable` loads it |
+| `package <name> [enable] [git <url>] [ref <ref>] [subdir <dir>] [path <dir>] [web <dir>]` | `pkg` | Package from the vault (name only), git or the recipe folder. `web` builds a frontend, see below. `enable` loads it |
 | `assets <name> [...]` | `asset` | Asset pack, same options |
 | `module <name> [linux <src>] [windows <src>] [enable]` | `mod` | C module package built from prebuilt `.so`/`.dll` files or archives (URL or recipe path) |
 | `file <source> <target> [template]` | | Copy a file or folder into the server, `template` expands placeholders |
@@ -159,6 +159,16 @@ Named entries (`package x`, `service x`, `var x`, `config k`, `env K`) replace e
 Built-in variables: `${server.name}`, `${server.path}`, `${os}`.
 `recipe.toml` holds the same data as TOML tables (`[recipe]`, `[server]`, `[variables]`, `[config]`, `[[package]]`,
 `[[assets]]`, `[[module]]`, `[[file]]`, `[[service]]`, `[[secret]]`, `[env]`, `[[hook]]`), see `nwm recipe show --format toml`.
+
+### Web frontends
+
+`package game enable path . web frontend` treats `frontend/` as a Node project of the package. The folder is never mounted into the server and
+changes in it do not reload the package. nwm runs `npm install` if needed and `npm run build`, so the build script has to write into the package
+output, for example `../out/Client/UI` with `base: './'` in Vite.
+
+`nwm dev` also runs `npm run dev -- --port <port> --strictPort` and stores the address as the custom setting `NWM_WEB_URL_<PACKAGE>`
+(`NWM_WEB_URL_LOS_HWRP` for `los-hwrp`), readable with `Server.GetCustomSettings()`. It stays in `Config.toml` afterwards, so only use it when
+`NWM_MODE` is `dev`.
 
 ### C modules
 

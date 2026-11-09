@@ -48,6 +48,7 @@ type Resource struct {
 	Output string `toml:"output,omitempty"`
 	Local  string `toml:"local,omitempty"`
 	Reload string `toml:"reload,omitempty"`
+	Web    string `toml:"web,omitempty"`
 }
 
 const (

@@ -122,7 +122,7 @@ func (c *Completer) candidates(previous []token) []Suggestion {
 			return c.storeItems(statement.Keyword == "assets")
 		}
 		switch last {
-		case "path", "subdir", "local", "output":
+		case "path", "subdir", "local", "output", "web":
 			return c.files(true)
 		case "git", "ref":
 			return nil

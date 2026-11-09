@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -191,18 +192,24 @@ func (r *runner) stopServer() {
 
 func (r *runner) startBuilders() {
 	for _, mount := range r.session.Mounts {
-		if len(mount.Plan.Watch) == 0 {
-			continue
+		if len(mount.Plan.Watch) > 0 {
+			command := exec.Command(mount.Plan.Watch[0], mount.Plan.Watch[1:]...)
+			command.Dir = mount.Plan.Root
+			if err := r.startChild(mount.Name, command); err != nil {
+				r.say("⚠️  %s: cannot start %s: %v", mount.Name, strings.Join(mount.Plan.Watch, " "), err)
+			}
 		}
-		if err := r.startBuilder(mount); err != nil {
-			r.say("⚠️  %s: cannot start %s: %v", mount.Name, strings.Join(mount.Plan.Watch, " "), err)
+		if mount.Plan.Web != "" {
+			command := exec.Command("npm", "run", "dev", "--", "--port", strconv.Itoa(mount.Plan.WebPort), "--strictPort")
+			command.Dir = mount.Plan.Web
+			if err := r.startChild(mount.Name, command); err != nil {
+				r.say("⚠️  %s: cannot start the web dev server: %v", mount.Name, err)
+			}
 		}
 	}
 }
 
-func (r *runner) startBuilder(mount *recipe.Mount) error {
-	command := exec.Command(mount.Plan.Watch[0], mount.Plan.Watch[1:]...)
-	command.Dir = mount.Plan.Root
+func (r *runner) startChild(name string, command *exec.Cmd) error {
 	reader, writer := io.Pipe()
 	command.Stdout = writer
 	command.Stderr = writer
@@ -211,7 +218,7 @@ func (r *runner) startBuilder(mount *recipe.Mount) error {
 		writer.Close()
 		return err
 	}
-	prefix := ui.Accent.Render("[" + filepath.Base(mount.Plan.Watch[0]) + " " + mount.Name + "]")
+	prefix := ui.Accent.Render("[" + filepath.Base(command.Args[0]) + " " + name + "]")
 	go func() {
 		scanner := bufio.NewScanner(reader)
 		for scanner.Scan() {
@@ -225,7 +232,7 @@ func (r *runner) startBuilder(mount *recipe.Mount) error {
 	r.mutex.Lock()
 	r.builders = append(r.builders, child)
 	r.mutex.Unlock()
-	r.say("watching %s with %s", mount.Name, strings.Join(mount.Plan.Watch, " "))
+	r.say("running %s for %s", strings.Join(command.Args, " "), name)
 	return nil
 }
 

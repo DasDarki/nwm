@@ -170,7 +170,7 @@ var statements = []Statement{
 	}},
 }
 
-var resourceOptions = []string{"enable", "git", "ref", "subdir", "path", "local", "build", "watch", "output", "reload"}
+var resourceOptions = []string{"enable", "git", "ref", "subdir", "path", "local", "build", "watch", "output", "reload", "web"}
 
 var devForbidden = []string{"recipe", "description", "author", "keywords", "dev"}
 
@@ -287,6 +287,8 @@ func parseResource(args []token, kind string) (Resource, error) {
 			resource.Watch = value
 		case "output":
 			resource.Output = value
+		case "web":
+			resource.Web = value
 		case "reload":
 			if value != ReloadHot && value != ReloadFull {
 				return resource, fmt.Errorf("%s %s: reload must be hot or full", kind, resource.Name)
@@ -295,6 +297,12 @@ func parseResource(args []token, kind string) (Resource, error) {
 		default:
 			return resource, fmt.Errorf("unknown option %q for %s, expected %s", option, kind, strings.Join(resourceOptions, ", "))
 		}
+	}
+	if resource.Web != "" && kind != "package" {
+		return resource, fmt.Errorf("%s %s: web is only available for packages", kind, resource.Name)
+	}
+	if resource.Web != "" && resource.Git == "" && resource.Path == "" && resource.Local == "" {
+		return resource, fmt.Errorf("%s %s: web needs git, path or local", kind, resource.Name)
 	}
 	if resource.Git != "" && resource.Path != "" {
 		return resource, fmt.Errorf("%s %s cannot use git and path together", kind, resource.Name)
@@ -743,7 +751,7 @@ func formatResources(keyword string, resources []Resource) []string {
 		if resource.Enable {
 			line += " enable"
 		}
-		for _, pair := range [][2]string{{"git", resource.Git}, {"ref", resource.Ref}, {"subdir", resource.Subdir}, {"path", resource.Path}, {"local", resource.Local}, {"build", resource.Build}, {"watch", resource.Watch}, {"output", resource.Output}, {"reload", resource.Reload}} {
+		for _, pair := range [][2]string{{"git", resource.Git}, {"ref", resource.Ref}, {"subdir", resource.Subdir}, {"path", resource.Path}, {"local", resource.Local}, {"build", resource.Build}, {"watch", resource.Watch}, {"output", resource.Output}, {"reload", resource.Reload}, {"web", resource.Web}} {
 			if pair[1] != "" {
 				line += " " + pair[0] + " " + QuoteWord(pair[1])
 			}

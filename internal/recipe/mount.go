@@ -147,6 +147,9 @@ func (m *Mount) Classify(path string) (Change, string) {
 	if path == filepath.Join(plan.Root, m.Kind.Manifest) {
 		return ChangeManifest, ""
 	}
+	if plan.Web != "" && within(plan.Web, path) {
+		return ChangeNone, ""
+	}
 	separateOutput := plan.Output != plan.Root
 	if !separateOutput || !within(plan.Output, path) {
 		for _, source := range plan.Sources {

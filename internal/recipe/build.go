@@ -22,6 +22,8 @@ type BuildPlan struct {
 	Sources []string
 	Exclude []string
 	Reload  string
+	Web     string
+	WebPort int
 }
 
 func (p *BuildPlan) NeedsBuild() bool {
@@ -58,6 +60,17 @@ func PlanBuild(resource Resource, root string) (*BuildPlan, error) {
 		}
 		plan.Output = output
 		plan.Exclude = appendTopLevel(plan.Exclude, root, output)
+	}
+	if resource.Web != "" {
+		web, err := fsutil.SafeJoin(root, resource.Web)
+		if err != nil {
+			return nil, fmt.Errorf("package %s: %w", resource.Name, err)
+		}
+		if web == root {
+			return nil, fmt.Errorf("package %s: web has to be a folder inside the package", resource.Name)
+		}
+		plan.Web = web
+		plan.Exclude = appendTopLevel(plan.Exclude, root, web)
 	}
 	if plan.NeedsBuild() && len(plan.Sources) == 0 && len(plan.Watch) == 0 {
 		plan.Sources = []string{root}

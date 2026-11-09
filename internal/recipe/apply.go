@@ -242,8 +242,36 @@ func placeResource(ctx context.Context, resource Resource, kind server.Kind, roo
 			return nil, err
 		}
 	}
+	if plan.Web != "" {
+		if err := BuildWeb(ctx, resource.Name, plan, options, report); err != nil {
+			return nil, err
+		}
+	}
 	report.Status("installing " + resource.Name)
 	return Assemble(resource.Name, kind, plan, filepath.Join(parent, resource.Name), local && options.Dev)
+}
+
+func BuildWeb(ctx context.Context, name string, plan *BuildPlan, options ApplyOptions, report ui.Reporter) error {
+	if _, err := exec.LookPath("npm"); err != nil {
+		return MissingToolsError([]string{"npm"})
+	}
+	build := []string{"npm", "run", "build"}
+	if options.ConfirmBuild != nil && !options.ConfirmBuild(name, build) {
+		return fmt.Errorf("building %s needs %q, allow builds of remote recipes with --yes", name, strings.Join(build, " "))
+	}
+	steps := [][]string{build}
+	if !isDirectory(filepath.Join(plan.Web, "node_modules")) {
+		steps = append([][]string{{"npm", "install"}}, steps...)
+	}
+	for _, step := range steps {
+		report.Status("building " + name + ": " + strings.Join(step, " "))
+		command := exec.CommandContext(ctx, step[0], step[1:]...)
+		command.Dir = plan.Web
+		if err := process.Stream(command, func(line string) { report.Status(name + ": " + line) }); err != nil {
+			return fmt.Errorf("web build of %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func RunBuild(ctx context.Context, name string, plan *BuildPlan, options ApplyOptions, report ui.Reporter) error {

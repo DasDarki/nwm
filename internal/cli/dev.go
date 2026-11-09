@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,11 @@ import (
 	"github.com/DasDarki/nwm/internal/steamcmd"
 	"github.com/DasDarki/nwm/internal/ui"
 	"github.com/spf13/cobra"
+)
+
+const (
+	firstWebPort = 5173
+	lastWebPort  = 5273
 )
 
 type devOptions struct {
@@ -153,6 +159,11 @@ func runDev(location string, extra []string, options devOptions) error {
 		return err
 	}
 	environment = append(environment, modeEnvironment...)
+	webEnvironment, err := server.ApplyWebURLs(target.Path, assignWebPorts(mounts))
+	if err != nil {
+		return err
+	}
+	environment = append(environment, webEnvironment...)
 	ui.Step("🛠️ ", "Developing %s on %s %s", ui.Accent.Render(manifest.Recipe.Name), ui.Accent.Render(target.Name), ui.Muted.Render(target.Path))
 	return dev.Run(&dev.Session{
 		ServerName: target.Name,
@@ -271,6 +282,32 @@ func mountLocalPackages(recipeDir string, serverDir string, prepared *preparedRe
 		return nil
 	})
 	return mounts, err
+}
+
+func assignWebPorts(mounts []*recipe.Mount) map[string]string {
+	urls := map[string]string{}
+	port := firstWebPort
+	for _, mount := range mounts {
+		if mount.Plan.Web == "" {
+			continue
+		}
+		port = nextFreePort(port)
+		mount.Plan.WebPort = port
+		urls[mount.Name] = fmt.Sprintf("http://localhost:%d", port)
+		port++
+	}
+	return urls
+}
+
+func nextFreePort(port int) int {
+	for ; port < lastWebPort; port++ {
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			listener.Close()
+			return port
+		}
+	}
+	return port
 }
 
 func localOnly(resources []recipe.Resource) []recipe.Resource {
