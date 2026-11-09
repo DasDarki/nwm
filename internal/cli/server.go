@@ -489,6 +489,14 @@ func startServer(current *state.State, target *state.Server, extra []string, opt
 	if err != nil {
 		return err
 	}
+	if info, running := server.Status(target.Name); running {
+		return fmt.Errorf("server %q is already running (pid %d)", target.Name, info.PID)
+	}
+	modeEnvironment, err := server.ApplyMode(target.Path, server.ModeProd)
+	if err != nil {
+		return err
+	}
+	environment = append(environment, modeEnvironment...)
 	if detach {
 		var info *server.RunInfo
 		err := ui.Run("Starting "+target.Name, func(context.Context, ui.Reporter) error {

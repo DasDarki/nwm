@@ -148,6 +148,11 @@ func runDev(location string, extra []string, options devOptions) error {
 	if info, running := server.Status(target.Name); running {
 		return fmt.Errorf("server %q is already running (pid %d), stop it first", target.Name, info.PID)
 	}
+	modeEnvironment, err := server.ApplyMode(target.Path, server.ModeDev)
+	if err != nil {
+		return err
+	}
+	environment = append(environment, modeEnvironment...)
 	ui.Step("🛠️ ", "Developing %s on %s %s", ui.Accent.Render(manifest.Recipe.Name), ui.Accent.Render(target.Name), ui.Muted.Render(target.Path))
 	return dev.Run(&dev.Session{
 		ServerName: target.Name,
