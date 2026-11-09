@@ -23,7 +23,8 @@ Before the server starts nwm:
 
 1. starts the server's services and waits until they are ready,
 2. adds the launch arguments stored in the server's `nwm.toml` (usually from a recipe),
-3. passes the variables from the server's `.env` file to the process.
+3. passes the variables from the server's `.env` file to the process,
+4. sets `NWM_MODE` to `prod`, see [Detecting development mode](../local-development.md#detecting-development-mode).
 
 Everything after `--` is passed to the server unchanged:
 

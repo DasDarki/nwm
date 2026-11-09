@@ -24,6 +24,7 @@ title: Environment variables
 
 | Variable | Where | Value |
 |---|---|---|
+| `NWM_MODE` | the nanos world server process | `dev` under `nwm dev`, otherwise `prod`. Also `custom_settings.NWM_MODE` for Lua |
 | Everything in `.env` | the nanos world server process | Values from recipes (`env`) and service presets |
 | `NWM_SERVER` | recipe hooks | Name of the server |
 | `NWM_SERVER_DIR` | recipe hooks | Server folder |

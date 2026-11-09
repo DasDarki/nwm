@@ -188,6 +188,17 @@ The same recipe serves development and normal installs:
 So you can publish the recipe of your game mode and others install it as a regular server, while your own repository
 doubles as its development environment. Build commands of remote recipes need confirmation like hooks, or `--yes`.
 
+## Detecting development mode
+
+nwm sets `NWM_MODE` on every server start: `dev` under `nwm dev`, `prod` for every other start through nwm. It is
+available as a custom setting in Lua and as an environment variable, for example for NanosSharp.
+
+```lua
+local is_dev = Server.GetCustomSettings().NWM_MODE == "dev"
+```
+
+Always compare against `dev`. A server that was not started by nwm has no `NWM_MODE`, and that counts as `prod`.
+
 ## Dev only statements
 
 Prefix any statement with `dev` to use it only in `nwm dev`:
